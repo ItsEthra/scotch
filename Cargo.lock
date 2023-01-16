@@ -517,6 +517,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 
 [[package]]
+name = "plugin"
+version = "0.1.0"
+dependencies = [
+ "scotch-guest",
+]
+
+[[package]]
 name = "proc-macro-error"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -660,6 +667,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "runner"
+version = "0.1.0"
+dependencies = [
+ "scotch-host",
+ "wasmer",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -674,6 +689,9 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 [[package]]
 name = "scotch-guest"
 version = "0.1.0"
+dependencies = [
+ "scotch-macros",
+]
 
 [[package]]
 name = "scotch-host"
@@ -681,6 +699,10 @@ version = "0.1.0"
 dependencies = [
  "wasmer",
 ]
+
+[[package]]
+name = "scotch-macros"
+version = "0.1.0"
 
 [[package]]
 name = "seahash"

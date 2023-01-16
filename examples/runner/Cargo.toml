@@ -1,13 +1,11 @@
 [package]
-name = "scotch-guest"
+name = "runner"
 edition = "2021"
 version.workspace = true
 license = "MIT"
 authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
-[features]
-default = ["scotch-macros"]
-
 [dependencies]
-scotch-macros = { path = "../macros", optional = true }
+wasmer = "3"
+scotch-host = { path = "../../host" }

@@ -1,5 +1,8 @@
 [workspace]
-members = ["host", "guest"]
+members = ["host", "guest", "macros", "examples/*"]
 
 [workspace.package]
 version = "0.1.0"
+
+[profile.release]
+lto = true

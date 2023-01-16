@@ -1,13 +1,13 @@
 [package]
-name = "scotch-guest"
+name = "plugin"
 edition = "2021"
 version.workspace = true
 license = "MIT"
 authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
-[features]
-default = ["scotch-macros"]
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
-scotch-macros = { path = "../macros", optional = true }
+scotch-guest = { path = "../../guest" }
