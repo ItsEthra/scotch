@@ -1,0 +1,4 @@
+[package]
+name = "scotch-guest"
+edition = "2021"
+version.workspace = true

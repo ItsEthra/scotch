@@ -1,0 +1,8 @@
+[package]
+name = "scotch-host"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+wasmer = "3"
+
