@@ -1,14 +1,10 @@
 [package]
-name = "plugin"
+name = "common"
 edition = "2021"
 version.workspace = true
 license = "MIT"
 authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
-[lib]
-crate-type = ["cdylib"]
-
 [dependencies]
-scotch-guest = { path = "../../guest" }
-common = { path = "../common" }
+bincode = "2.0.0-rc.2"

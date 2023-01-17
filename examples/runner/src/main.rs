@@ -18,11 +18,14 @@ fn main() -> Result<()> {
     };
     let instance = Instance::new(&mut store, &module, &imports)?;
 
-    let adder: TypedFunction<(i32, i64), i64> =
+    let add_numbers: TypedFunction<(i32, i64), i64> =
         instance.exports.get_typed_function(&store, "add_numbers")?;
 
     // 10 + 20 + 15 = 45
-    println!("Result: {}", adder.call(&mut store, 10, 20)?);
+    println!("Result: {}", add_numbers.call(&mut store, 10, 20)?);
+
+    let add_object: TypedFunction<i32, f32> =
+        instance.exports.get_typed_function(&store, "add_object")?;
 
     Ok(())
 }
