@@ -7,5 +7,5 @@ authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
 [dependencies]
-wasmer = "3"
-
+bincode.workspace = true
+wasmer.workspace = true

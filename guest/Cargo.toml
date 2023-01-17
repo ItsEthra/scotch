@@ -11,3 +11,4 @@ default = ["scotch-macros"]
 
 [dependencies]
 scotch-macros = { path = "../macros", optional = true }
+bincode.workspace = true

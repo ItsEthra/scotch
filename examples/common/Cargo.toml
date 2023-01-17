@@ -7,4 +7,4 @@ authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
 [dependencies]
-bincode = "2.0.0-rc.2"
+bincode.workspace = true

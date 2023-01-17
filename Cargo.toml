@@ -4,5 +4,11 @@ members = ["host", "guest", "macros", "examples/*"]
 [workspace.package]
 version = "0.1.0"
 
+[workspace.dependencies]
+bincode = "2.0.0-rc.2"
+wasmer = "3"
+
+macros = { path = "macros" }
+
 [profile.release]
 lto = true
