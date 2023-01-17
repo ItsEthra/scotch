@@ -9,3 +9,4 @@ repository = "https://github.com/ItsEthra/scotch"
 [dependencies]
 wasmer = "3"
 scotch-host = { path = "../../host" }
+eyre = "0.6.8"
