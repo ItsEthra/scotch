@@ -1,7 +1,7 @@
 use bincode::config::standard;
 use common::Object;
 use eyre::Result;
-use scotch_host::EncodedString;
+use scotch_host::{encode_str_at, EncodedStr};
 use wasmer::{imports, Function, Instance, Module, Store, TypedFunction};
 
 const PLUGIN: &[u8] = include_bytes!("../plugin.wasm");
@@ -43,13 +43,22 @@ fn main() -> Result<()> {
     // 3.1 + 8 = 11.5
     println!("Add object: {}", add_object.call(&mut store, 0x200)?);
 
-    let get_string: TypedFunction<i32, EncodedString> =
+    let get_string: TypedFunction<i32, EncodedStr> =
         instance.exports.get_typed_function(&store, "get_string")?;
 
     let out = get_string.call(&mut store, 13)?;
     let view = memory.view(&store);
 
     println!("Get string: {:?}", out.read(&view)?);
+
+    let capitalize: TypedFunction<EncodedStr, EncodedStr> =
+        instance.exports.get_typed_function(&store, "capitalize")?;
+    let view = memory.view(&store);
+    let enc = encode_str_at(&view, 0x300, "Hello, World!")?;
+    let out = capitalize.call(&mut store, enc)?;
+    let view = memory.view(&store);
+
+    println!("Capitalize: {:?}", out.read(&view)?);
 
     Ok(())
 }

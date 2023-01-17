@@ -9,7 +9,7 @@ use alloc::{
     vec::Vec,
 };
 use bincode::{config::standard, error::DecodeError, Decode, Encode};
-use core::{marker::PhantomData, slice::from_raw_parts};
+use core::{marker::PhantomData, slice::from_raw_parts, str::Utf8Error};
 
 #[repr(transparent)]
 pub struct EncodedPtr<T: Encode + Decode> {
@@ -37,17 +37,14 @@ pub struct EncodedString {
 }
 
 impl EncodedString {
-    pub fn read(&self) -> Result<String, FromUtf8Error> {
+    pub fn read(&self) -> Result<&str, Utf8Error> {
         let mut size = [0, 0];
 
         unsafe { (self.offset as *const u8).copy_to_nonoverlapping(&mut size as _, 2) }
 
         let len = u16::from_le_bytes(size) as usize;
-        let mut data = Vec::with_capacity(len);
 
-        unsafe { ((self.offset + 2) as *const u8).copy_to_nonoverlapping(data.as_mut_ptr(), len) }
-
-        String::from_utf8(data)
+        unsafe { core::str::from_utf8(core::slice::from_raw_parts((self.offset + 2) as _, len)) }
     }
 }
 

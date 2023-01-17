@@ -21,3 +21,8 @@ extern "C" fn add_object(obj: EncodedPtr<Object>) -> f32 {
 extern "C" fn get_string(number: i32) -> EncodedString {
     format!("Your number is: {number}").into()
 }
+
+#[no_mangle]
+extern "C" fn capitalize(string: EncodedString) -> EncodedString {
+    string.read().unwrap().to_uppercase().into()
+}
