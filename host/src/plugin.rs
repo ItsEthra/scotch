@@ -26,13 +26,19 @@ pub struct WasmPluginBuilder {
     store: Store,
     module: Option<Module>,
     alloc_opts: WasmAllocatorOptions,
+    imports: Option<Imports>,
 }
 
 impl WasmPluginBuilder {
-    pub fn with_store(store: Store) -> Self {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn new_with_store(store: Store) -> Self {
         Self {
             store,
-            ..Self::default()
+            ..Self::new()
         }
     }
 
@@ -46,15 +52,18 @@ impl WasmPluginBuilder {
         self
     }
 
-    pub fn finish(mut self) -> Result<WasmPlugin, InstantiationError> {
-        let imports = Imports::new();
+    pub fn with_imports(mut self, imports: impl FnOnce(&mut Store) -> Imports) -> Self {
+        self.imports = Some(imports(&mut self.store));
+        self
+    }
 
+    pub fn finish(mut self) -> Result<WasmPlugin, InstantiationError> {
         let instance = Instance::new(
             &mut self.store,
             self.module
                 .as_ref()
                 .expect("You need to call `from_binary` first"),
-            &imports,
+            &self.imports.unwrap_or_default(),
         )?;
         let memory = instance
             .exports
@@ -74,5 +83,3 @@ impl WasmPluginBuilder {
         })
     }
 }
-
-impl WasmPluginBuilder {}
