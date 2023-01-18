@@ -3,7 +3,9 @@
 use crate::{WasmAllocator, WasmAllocatorOptions};
 use parking_lot::RwLock;
 use std::{any::Any, sync::Arc};
-use wasmer::{CompileError, FunctionEnv, Imports, Instance, InstantiationError, Module, Store};
+use wasmer::{
+    CompileError, Extern, FunctionEnv, Imports, Instance, InstantiationError, Module, Store,
+};
 
 pub trait WasmEnv: Any + Send + 'static + Sized {}
 impl<T> WasmEnv for T where T: Any + Send + 'static + Sized {}
@@ -104,4 +106,18 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
             managed: Arc::new(managed),
         })
     }
+}
+
+pub use wasmer::{Function, FunctionEnvMut};
+pub fn create_imports_from_functions<const N: usize>(
+    items: [(&'static str, Function); N],
+) -> Imports {
+    let mut imports = Imports::new();
+    imports.register_namespace(
+        "env",
+        items
+            .into_iter()
+            .map(|(s, f)| (s.to_string(), Extern::Function(f))),
+    );
+    imports
 }
