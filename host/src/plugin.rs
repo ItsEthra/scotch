@@ -62,6 +62,11 @@ impl WasmPlugin {
         }
     }
 
+    pub fn free_encoded<T: Encode + Decode>(&self, ptr: EncodedPtr<T>) {
+        let offset: u64 = ptr.offset.into();
+        self.alloc.free(offset as u32);
+    }
+
     pub fn function<H: GuestFunctionHandle + 'static>(&self) -> &H::Callback {
         let export = self.exports.get(&TypeId::of::<H>()).unwrap();
         unsafe { transmute(export) }

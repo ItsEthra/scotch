@@ -38,6 +38,8 @@ fn main() -> Result<()> {
 
     let enc = plugin.new_encoded(Object { a: 5.3, b: 4 })?;
     let all = plugin.function::<add_all>()(enc)?;
+    plugin.free_encoded(enc);
+
     dbg!(all);
 
     Ok(())

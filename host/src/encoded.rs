@@ -4,7 +4,7 @@ use wasmer::{FromToNativeWasmType, Memory32, MemorySize, MemoryView, NativeWasmT
 
 #[repr(transparent)]
 pub struct EncodedPtr<T: Encode + Decode, M: MemorySize = Memory32> {
-    offset: M::Offset,
+    pub(crate) offset: M::Offset,
     _ty: PhantomData<T>,
 }
 
@@ -41,8 +41,11 @@ where
     type Native = M::Native;
 
     #[inline]
-    fn from_native(_: Self::Native) -> Self {
-        unimplemented!("Returning `EncodedPtr` from guest functions is not allwed")
+    fn from_native(native: Self::Native) -> Self {
+        Self {
+            offset: M::native_to_offset(native),
+            _ty: PhantomData,
+        }
     }
 
     #[inline]
@@ -50,3 +53,15 @@ where
         M::offset_to_native(self.offset)
     }
 }
+
+impl<T: Encode + Decode, M: MemorySize> Clone for EncodedPtr<T, M> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            offset: self.offset,
+            _ty: PhantomData,
+        }
+    }
+}
+
+impl<T: Encode + Decode, M: MemorySize> Copy for EncodedPtr<T, M> {}
