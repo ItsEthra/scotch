@@ -9,11 +9,13 @@ pub type StoreRef = Arc<RwLock<Store>>;
 // u128 is weird but i don't know a better way to store it.
 pub type CallbackRef = u128;
 
+/// # Safety
 /// Do not implemented this trait manually.
 pub unsafe trait GuestFunctionHandle {
     type Callback;
 }
 
+/// # Safety
 /// Do not implemented this trait manually.
 pub unsafe trait GuestFunctionCreator {
     fn create(&self, store: StoreRef, exports: &Exports) -> (TypeId, CallbackRef);

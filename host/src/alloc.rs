@@ -102,10 +102,8 @@ impl Node {
 
                 if let Some(addr) = left.occupy_free_block(order, opts) {
                     Some(addr)
-                } else if let Some(addr) = right.occupy_free_block(order, opts) {
-                    Some(addr)
                 } else {
-                    None
+                    right.occupy_free_block(order, opts)
                 }
             }
             _ => None,

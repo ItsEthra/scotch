@@ -1,4 +1,3 @@
-use heck::ToPascalCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
@@ -27,7 +26,7 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
         "Host function can not be const"
     );
 
-    let ident = make_host_func_ident(&item_fn.sig.ident);
+    let ident = &item_fn.sig.ident;
     let vis = &item_fn.vis;
     let args = &item_fn.sig.inputs;
 
@@ -83,7 +82,6 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
             };
 
             let export_ident = &f.name;
-            let handle_ident = format_ident!("{}Handle", f.name.to_string().to_pascal_case());
             let vis = f.vis;
 
             let arg_types = f.ty.inputs
@@ -102,18 +100,19 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
             let arg_names = f.ty.inputs
                 .into_iter()
                 .enumerate()
-                .map(|(i, arg)| 
+                .map(|(i, arg)|
                     arg.name.map(|(i, _)| i).unwrap_or_else(|| format_ident!("arg{i}"))
                 );
             let arg_names2 = arg_names.clone();
 
             quote! {
-                #vis struct #handle_ident;
-                unsafe impl scotch_host::GuestFunctionHandle for #handle_ident {
+                #[allow(non_camel_case_types)]
+                #vis struct #export_ident;
+                unsafe impl scotch_host::GuestFunctionHandle for #export_ident {
                     type Callback = Box<dyn Fn(#(#arg_types),*) #return_type>;
                 }
 
-                unsafe impl scotch_host::GuestFunctionCreator for #handle_ident {
+                unsafe impl scotch_host::GuestFunctionCreator for #export_ident {
                     fn create(
                         &self,
                         store: scotch_host::StoreRef,
@@ -127,7 +126,7 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
                             typed_fn.call(&mut *store.write(), #(#arg_names2),*)
                         }) as <Self as scotch_host::GuestFunctionHandle>::Callback;
 
-                        (std::any::TypeId::of::<#handle_ident>(), unsafe { std::mem::transmute(callback) })
+                        (std::any::TypeId::of::<#export_ident>(), unsafe { std::mem::transmute(callback) })
                     }
                 }
             }
@@ -152,13 +151,9 @@ pub fn make_imports(input: TokenStream) -> TokenStream {
         assert!(!item.segments.is_empty(), "Empty segments are not allowed");
 
         let func_ident = &item.segments.last().unwrap().ident;
-        let mangled_ident = make_host_func_ident(func_ident);
-
-        let mut new_path = item.clone();
-        new_path.segments.last_mut().as_mut().unwrap().ident = mangled_ident;
 
         quote! {
-            (stringify!(#func_ident), scotch_host::Function::new_typed_with_env(_store, _env, #new_path))
+            (stringify!(#func_ident), scotch_host::Function::new_typed_with_env(_store, _env, #item))
         }
     });
 
@@ -171,6 +166,24 @@ pub fn make_imports(input: TokenStream) -> TokenStream {
     out.into()
 }
 
-fn make_host_func_ident(ident: &Ident) -> Ident {
-    format_ident!("__scotch_host_fn_{ident}")
+#[proc_macro]
+pub fn make_exports(input: TokenStream) -> TokenStream {
+    let parser = Punctuated::<Path, Token![,]>::parse_terminated;
+    let exported_fns = parser
+        .parse(input)
+        .expect("Invalid make_exports invokation. Expected list of paths");
+
+    let boxes = exported_fns.into_iter().map(|item| {
+        assert!(!item.segments.is_empty(), "Empty segments are not allowed");
+
+        quote! {
+            Box::new(#item) as Box<dyn scotch_host::GuestFunctionCreator>
+        }
+    });
+
+    let out = quote! {
+        vec![#(#boxes),*]
+    };
+
+    out.into()
 }

@@ -100,6 +100,7 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
         self
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn finish(mut self) -> Result<WasmPlugin, InstantiationError> {
         let instance = Instance::new(
             &mut self.store,
@@ -113,7 +114,7 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
             .exports
             .get_memory("memory")
             .expect("Memory is not found. Expected `memory` export.");
-        let alloc = WasmAllocator::new(&mut self.store, &memory, self.alloc_opts)
+        let alloc = WasmAllocator::new(&mut self.store, memory, self.alloc_opts)
             .expect("Failed to create allocator. Memory grow failed");
 
         let store: Arc<RwLock<Store>> = Arc::new(self.store.into());
@@ -130,6 +131,13 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
             instance,
             alloc,
         })
+    }
+}
+
+impl<E: WasmEnv> Default for WasmPluginBuilder<E> {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
 

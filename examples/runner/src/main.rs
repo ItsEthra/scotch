@@ -1,5 +1,5 @@
 use eyre::Result;
-use scotch_host::{guest_functions, host_function, make_imports, WasmPlugin};
+use scotch_host::{guest_functions, host_function, make_exports, make_imports, WasmPlugin};
 
 const PLUGIN: &[u8] = include_bytes!("../plugin.wasm");
 
@@ -25,13 +25,11 @@ fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
         .with_env(())
         .with_imports(make_imports![other::get_number, print_number])
-        .with_exports(vec![
-            Box::new(AddNumberHandle) as Box<dyn scotch_host::GuestFunctionCreator>
-        ])
+        .with_exports(make_exports![add_number])
         .from_binary(PLUGIN)?
         .finish()?;
 
-    let val = plugin.function::<AddNumberHandle>()(15)?;
+    let val = plugin.function::<add_number>()(15)?;
     dbg!(val);
 
     Ok(())

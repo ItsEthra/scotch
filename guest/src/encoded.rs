@@ -9,6 +9,8 @@ pub struct EncodedPtr<T: Encode + Decode> {
 }
 
 impl<T: Encode + Decode> EncodedPtr<T> {
+    /// # Safety
+    /// Pointer is managed by scotch_guest and was not created by other means.
     #[inline]
     pub unsafe fn read(&self) -> Result<T, DecodeError> {
         let mut size = [0, 0];
