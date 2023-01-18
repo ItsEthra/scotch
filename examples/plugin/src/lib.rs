@@ -1,8 +1,12 @@
 extern "C" {
-    pub fn get_number(val: i32) -> i32;
+    fn get_number(v: i32) -> i32;
+    fn print_number(v: i32);
 }
 
 #[no_mangle]
 pub extern "C" fn add_number(a: i32) -> i32 {
-    unsafe { a + get_number(a) }
+    unsafe {
+        print_number(a);
+        a + get_number(a)
+    }
 }
