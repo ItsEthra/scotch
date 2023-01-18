@@ -2,8 +2,11 @@
 
 use crate::{WasmAllocator, WasmAllocatorOptions};
 use parking_lot::RwLock;
-use std::sync::Arc;
-use wasmer::{CompileError, Imports, Instance, InstantiationError, Module, Store};
+use std::{any::Any, sync::Arc};
+use wasmer::{CompileError, FunctionEnv, Imports, Instance, InstantiationError, Module, Store};
+
+pub trait WasmEnv: Any + Send + 'static + Sized {}
+impl<T> WasmEnv for T where T: Any + Send + 'static + Sized {}
 
 struct Managed {
     store: RwLock<Store>,
@@ -16,23 +19,29 @@ pub struct WasmPlugin {
 }
 
 impl WasmPlugin {
-    pub fn builder() -> WasmPluginBuilder {
-        WasmPluginBuilder::default()
+    pub fn builder<E: WasmEnv>() -> WasmPluginBuilder<E> {
+        WasmPluginBuilder::new()
     }
 }
 
-#[derive(Default)]
-pub struct WasmPluginBuilder {
+pub struct WasmPluginBuilder<E: WasmEnv> {
     store: Store,
     module: Option<Module>,
     alloc_opts: WasmAllocatorOptions,
     imports: Option<Imports>,
+    func_env: Option<FunctionEnv<E>>,
 }
 
-impl WasmPluginBuilder {
+impl<E: WasmEnv> WasmPluginBuilder<E> {
     #[inline]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            store: Store::default(),
+            module: None,
+            alloc_opts: WasmAllocatorOptions::default(),
+            imports: None,
+            func_env: None,
+        }
     }
 
     pub fn new_with_store(store: Store) -> Self {
@@ -52,8 +61,21 @@ impl WasmPluginBuilder {
         self
     }
 
-    pub fn with_imports(mut self, imports: impl FnOnce(&mut Store) -> Imports) -> Self {
-        self.imports = Some(imports(&mut self.store));
+    pub fn with_env(mut self, env: E) -> Self {
+        self.func_env = Some(FunctionEnv::new(&mut self.store, env));
+        self
+    }
+
+    pub fn with_imports(
+        mut self,
+        imports: impl FnOnce(&mut Store, &FunctionEnv<E>) -> Imports,
+    ) -> Self {
+        self.imports = Some(imports(
+            &mut self.store,
+            self.func_env
+                .as_ref()
+                .expect("You need to call `with_env` first"),
+        ));
         self
     }
 
