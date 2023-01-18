@@ -6,3 +6,5 @@ pub use alloc::*;
 
 mod plugin;
 pub use plugin::*;
+
+pub use scotch_macros::*;

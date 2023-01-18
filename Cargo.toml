@@ -9,7 +9,7 @@ bincode = "2.0.0-rc.2"
 parking_lot = "0.12"
 wasmer = "3"
 
-macros = { path = "macros" }
+scotch-macros = { path = "macros" }
 
 [profile.release]
 lto = true
