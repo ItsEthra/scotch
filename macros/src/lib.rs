@@ -34,7 +34,7 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     let block = &item_fn.block;
 
     let out = quote! {
-        #vis fn #ident(__env: #env_type, #args) #output {
+        #vis fn #ident(ENV: #env_type, #args) #output {
             let __output = #block;
 
             __output
@@ -52,16 +52,32 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
         vis: Visibility,
         name: Ident,
         arr: Token![=>],
+        rename: Option<Ident>,
         ty: TypeBareFn,
     }
 
     impl Parse for GuestFunction {
         fn parse(input: ParseStream) -> syn::Result<Self> {
+            let vis = input.parse()?;
+            let name = input.parse()?;
+
+            let peeker = input.lookahead1();
+            let rename = if peeker.peek(Token![as]) {
+                let _: Token![as] = input.parse()?;
+                Some(input.parse()?)
+            } else {
+                None
+            };
+
+            let arr = input.parse()?;
+            let ty = input.parse()?;
+
             Ok(Self {
-                vis: input.parse()?,
-                name: input.parse()?,
-                arr: input.parse()?,
-                ty: input.parse()?,
+                rename,
+                vis,
+                name,
+                arr,
+                ty,
             })
         }
     }
@@ -69,7 +85,7 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
     let parser = Punctuated::<GuestFunction, Token![,]>::parse_terminated;
     let guest_fns = parser
         .parse(input)
-        .expect("Invalid guest_functions invokation.");
+        .expect("Invalid guest_functions invokation");
 
     let handles = guest_fns
         .into_iter()
@@ -82,6 +98,7 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
             };
 
             let export_ident = &f.name;
+            let handle_ident = f.rename.unwrap_or_else(|| f.name.clone());
             let vis = f.vis;
 
             let arg_types = f.ty.inputs
@@ -107,12 +124,12 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
 
             quote! {
                 #[allow(non_camel_case_types)]
-                #vis struct #export_ident;
-                unsafe impl scotch_host::GuestFunctionHandle for #export_ident {
+                #vis struct #handle_ident;
+                unsafe impl scotch_host::GuestFunctionHandle for #handle_ident {
                     type Callback = Box<dyn Fn(#(#arg_types),*) #return_type>;
                 }
 
-                unsafe impl scotch_host::GuestFunctionCreator for #export_ident {
+                unsafe impl scotch_host::GuestFunctionCreator for #handle_ident {
                     fn create(
                         &self,
                         store: scotch_host::StoreRef,
@@ -126,7 +143,7 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
                             typed_fn.call(&mut *store.write(), #(#arg_names2),*)
                         }) as <Self as scotch_host::GuestFunctionHandle>::Callback;
 
-                        (std::any::TypeId::of::<#export_ident>(), unsafe { std::mem::transmute(callback) })
+                        (std::any::TypeId::of::<#handle_ident>(), unsafe { std::mem::transmute(callback) })
                     }
                 }
             }

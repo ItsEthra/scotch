@@ -18,18 +18,18 @@ fn print_number(a: i32) {
 }
 
 guest_functions! {
-    pub add_number => fn(named: i32) -> i32
+    pub add_number as AddNumber => fn(named: i32) -> i32
 }
 
 fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
         .with_env(())
         .with_imports(make_imports![other::get_number, print_number])
-        .with_exports(make_exports![add_number])
+        .with_exports(make_exports![AddNumber])
         .from_binary(PLUGIN)?
         .finish()?;
 
-    let val = plugin.function::<add_number>()(15)?;
+    let val = plugin.function::<AddNumber>()(15)?;
     dbg!(val);
 
     Ok(())
