@@ -1,20 +1,17 @@
 #![allow(dead_code)]
 
 use crate::{
-    CallbackRef, EncodedPtr, GuestFunctionCreator, GuestFunctionHandle, WasmAllocator,
-    WasmAllocatorOptions,
+    CallbackRef, GuestFunctionCreator, GuestFunctionHandle, InstanceRef, StoreRef, WasmAllocRef,
+    WasmAllocator, WasmAllocatorOptions,
 };
-use bincode::{config::standard, Decode, Encode};
-use parking_lot::RwLock;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    mem::{size_of, transmute},
+    mem::transmute,
     sync::Arc,
 };
 use wasmer::{
-    CompileError, Extern, FunctionEnv, Imports, Instance, InstantiationError, MemoryAccessError,
-    Module, Store,
+    CompileError, Extern, FunctionEnv, Imports, Instance, InstantiationError, Module, Store,
 };
 
 pub trait WasmEnv: Any + Send + 'static + Sized {}
@@ -22,49 +19,14 @@ impl<T> WasmEnv for T where T: Any + Send + 'static + Sized {}
 
 pub struct WasmPlugin {
     exports: HashMap<TypeId, CallbackRef>,
-    store: Arc<RwLock<Store>>,
-    alloc: WasmAllocator,
-    instance: Instance,
+    store: StoreRef,
+    alloc: WasmAllocRef,
+    instance: InstanceRef,
 }
 
 impl WasmPlugin {
     pub fn builder<E: WasmEnv>() -> WasmPluginBuilder<E> {
         WasmPluginBuilder::new()
-    }
-
-    pub fn new_encoded<T: Encode + Decode>(
-        &self,
-        value: T,
-    ) -> Result<EncodedPtr<T>, MemoryAccessError> {
-        let mut buf = [0u8; 256];
-        let view = self
-            .instance
-            .exports
-            .get_memory("memory")
-            .unwrap()
-            .view(&*self.store.read());
-
-        type PrefixType = u16;
-
-        // First try encoding to the stack if the object is small,
-        // otherwise encode to the heap.
-        if let Ok(size) = bincode::encode_into_slice(value, &mut buf[..], standard()) {
-            let ptr = self
-                .alloc
-                .alloc((size + size_of::<PrefixType>()) as u32)
-                .expect("Allocation failed");
-            view.write(ptr as u64, &(size as PrefixType).to_le_bytes())?;
-            view.write(ptr as u64 + size_of::<PrefixType>() as u64, &buf[..size])?;
-
-            Ok(EncodedPtr::new(ptr))
-        } else {
-            todo!()
-        }
-    }
-
-    pub fn free_encoded<T: Encode + Decode>(&self, ptr: EncodedPtr<T>) {
-        let offset: u64 = ptr.offset.into();
-        self.alloc.free(offset as u32);
     }
 
     pub fn function<H: GuestFunctionHandle + 'static>(&self) -> &H::Callback {
@@ -140,27 +102,36 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
 
     #[allow(clippy::result_large_err)]
     pub fn finish(mut self) -> Result<WasmPlugin, InstantiationError> {
-        let instance = Instance::new(
+        let instance: InstanceRef = Instance::new(
             &mut self.store,
             self.module
                 .as_ref()
                 .expect("You need to call `from_binary` first"),
             &self.imports.unwrap_or_default(),
-        )?;
+        )?
+        .into();
 
         let memory = instance
             .exports
             .get_memory("memory")
             .expect("Memory is not found. Expected `memory` export.");
-        let alloc = WasmAllocator::new(&mut self.store, memory, self.alloc_opts)
-            .expect("Failed to create allocator. Memory grow failed");
 
-        let store: Arc<RwLock<Store>> = Arc::new(self.store.into());
+        let alloc: WasmAllocRef = WasmAllocator::new(&mut self.store, memory, self.alloc_opts)
+            .expect("Failed to create allocator. Memory grow failed")
+            .into();
+        let store: StoreRef = Arc::new(self.store.into());
 
         let exports = self
             .exports
             .into_iter()
-            .map(|ex| ex.create(store.clone(), &instance.exports))
+            .map(|ex| {
+                ex.create(
+                    store.clone(),
+                    alloc.clone(),
+                    instance.clone(),
+                    &instance.exports,
+                )
+            })
             .collect::<HashMap<_, _>>();
 
         Ok(WasmPlugin {

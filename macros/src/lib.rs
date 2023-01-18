@@ -2,9 +2,10 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
     parse::{Parse, ParseStream, Parser},
-    parse_macro_input,
+    parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    Ident, ItemFn, Path, ReturnType, Token, Type, TypeBareFn, Visibility,
+    BareFnArg, Ident, ItemFn, Path, ReturnType, Stmt, Token, Type, TypeBareFn, TypePath,
+    Visibility,
 };
 
 #[proc_macro_attribute]
@@ -90,57 +91,114 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
     let handles = guest_fns
         .into_iter()
         .map(|mut f| {
-            if let ReturnType::Type(_, ref mut ty) = f.ty.output {
+            let (callback_return_type, dispatch_return_type): (Type, TypePath) = if let ReturnType::Type(_, ref mut ty) = f.ty.output {
                 let Type::Path(ty) = ty.as_mut() else { panic!("Bad return type"); };
-                ty.path = syn::parse2(quote!(Result<#ty, scotch_host::RuntimeError>)).unwrap();
+
+                (parse_quote!(Result<#ty, scotch_host::RuntimeError>), ty.clone())
             } else {
-                f.ty.output = syn::parse2(quote!(Result<(), scotch_host::RuntimeError>)).unwrap();
+                (parse_quote!(Result<(), scotch_host::RuntimeError>), parse_quote!(()))
             };
 
             let export_ident = &f.name;
             let handle_ident = f.rename.unwrap_or_else(|| f.name.clone());
             let vis = f.vis;
 
-            let arg_types = f.ty.inputs
-                .iter()
-                .map(|arg| arg.ty.clone())
-                .collect::<Vec<_>>();
+            #[derive(Debug, Default)]
+            struct TypeData {
+                callback_types: Vec<Type>,
+                callback_args: Vec<BareFnArg>,
+                dispatch_types: Vec<Type>,
+                pre_dispatch: Vec<Stmt>,
+                post_dispatch: Vec<Stmt>,
+            }
 
-            let return_type = f.ty.output.clone();
+            fn is_atom_type(ty: &str) -> bool {
+                const ATOMS: &[&str] = &[
+                    "bool", "char",
+                    "u8", "u16", "u32", "u64",
+                    "i8", "i16", "i32", "i64",
+                ];
 
-            let typed_fn_args = if f.ty.inputs.len() == 1 {
-                quote!(#(#arg_types)*)
+                ATOMS.iter().any(|&a| a == ty)
+            }
+
+            fn get_dispatch_type(ty: Type) -> (Type, bool) {
+                match ty {
+                    Type::Path(ref path) if path.path.segments.len() == 1 &&
+                        is_atom_type(&path.path.segments.first().unwrap().ident.to_string()) => (ty, false),
+                    _ => (parse_quote!(scotch_host::EncodedPtr<#ty>), true),
+                }
+            }
+
+            fn prepare_types<'a>(args: impl Iterator<Item = BareFnArg>) -> TypeData {
+                let mut out = TypeData::default();
+
+                args.into_iter().enumerate().for_each(|(i, arg)| {
+                    out.callback_types.push(arg.ty.clone());
+                    let name = arg.name.map(|(i, _)| i).unwrap_or_else(|| format_ident!("arg{i}"));
+                    let ty = &arg.ty;
+                    out.callback_args.push(parse_quote!(#name: #ty));
+
+                    let (disp_ty, foreign) = get_dispatch_type(arg.ty);
+                    if foreign {
+                        out.pre_dispatch = parse_quote!(let #name: #disp_ty = scotch_host::EncodedPtr::new_in(#name, &*alloc, &__view).unwrap();); 
+                        out.post_dispatch = parse_quote!(#name.free_in(&*alloc););
+                    }
+
+                    out.dispatch_types.push(disp_ty);
+                });
+
+                out
+            }
+
+            let TypeData {
+                callback_types,
+                callback_args,
+                pre_dispatch,
+                post_dispatch,
+                dispatch_types,
+            } = prepare_types(f.ty.inputs.clone().into_iter());
+
+            let dispatch_types = if dispatch_types.len() == 1 {
+                quote!(#(#dispatch_types)*)
             } else {
-                quote!((#(#arg_types),*))
+                quote!((#(#dispatch_types),*))
             };
 
-            let arg_names = f.ty.inputs
-                .into_iter()
+            let arg_names = callback_args
+                .iter()
                 .enumerate()
-                .map(|(i, arg)|
-                    arg.name.map(|(i, _)| i).unwrap_or_else(|| format_ident!("arg{i}"))
-                );
-            let arg_names2 = arg_names.clone();
+                .map(|(i, arg)| {
+                    arg.name.clone().map(|(i, _)| i).unwrap_or_else(|| format_ident!("arg{i}"))
+                });
 
             quote! {
                 #[allow(non_camel_case_types)]
                 #vis struct #handle_ident;
                 unsafe impl scotch_host::GuestFunctionHandle for #handle_ident {
-                    type Callback = Box<dyn Fn(#(#arg_types),*) #return_type>;
+                    type Callback = Box<dyn Fn(#(#callback_types),*) -> #callback_return_type>;
                 }
 
                 unsafe impl scotch_host::GuestFunctionCreator for #handle_ident {
                     fn create(
                         &self,
                         store: scotch_host::StoreRef,
+                        alloc: scotch_host::WasmAllocRef,
+                        instance: scotch_host::InstanceRef,
                         exports: &scotch_host::Exports,
                     ) -> (std::any::TypeId, scotch_host::CallbackRef) {
-                        let typed_fn: scotch_host::TypedFunction<#typed_fn_args, _> = exports
+                        let typed_fn: scotch_host::TypedFunction<#dispatch_types, #dispatch_return_type> = exports
                             .get_typed_function(&*store.read(), stringify!(#export_ident))
                             .unwrap();
 
-                        let callback = Box::new(move |#(#arg_names),*| {
-                            typed_fn.call(&mut *store.write(), #(#arg_names2),*)
+                        let callback = Box::new(move |#(#callback_args),*| {
+                            let __view = instance.exports.get_memory("memory").unwrap().view(&*store.read());
+
+                            #(#pre_dispatch)*
+                            let out = typed_fn.call(&mut *store.write(), #(#arg_names),*);
+                            #(#post_dispatch)*
+
+                            out
                         }) as <Self as scotch_host::GuestFunctionHandle>::Callback;
 
                         (std::any::TypeId::of::<#handle_ident>(), unsafe { std::mem::transmute(callback) })

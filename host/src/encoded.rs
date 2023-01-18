@@ -1,6 +1,10 @@
 use bincode::{config::standard, error::DecodeError, Decode, Encode};
-use std::marker::PhantomData;
-use wasmer::{FromToNativeWasmType, Memory32, MemorySize, MemoryView, NativeWasmTypeInto};
+use std::{marker::PhantomData, mem::size_of};
+use wasmer::{
+    FromToNativeWasmType, Memory32, MemoryAccessError, MemorySize, MemoryView, NativeWasmTypeInto,
+};
+
+use crate::WasmAllocator;
 
 #[repr(transparent)]
 pub struct EncodedPtr<T: Encode + Decode, M: MemorySize = Memory32> {
@@ -15,6 +19,35 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
             offset,
             _ty: PhantomData,
         }
+    }
+
+    pub fn new_in(
+        value: T,
+        alloc: &WasmAllocator,
+        view: &MemoryView,
+    ) -> Result<Self, MemoryAccessError> {
+        let mut buf = [0u8; 256];
+
+        type PrefixType = u16;
+
+        // First try encoding to the stack if the object is small,
+        // otherwise encode to the heap.
+        if let Ok(size) = bincode::encode_into_slice(value, &mut buf[..], standard()) {
+            let ptr = alloc
+                .alloc((size + size_of::<PrefixType>()) as u32)
+                .expect("Allocation failed");
+            view.write(ptr as u64, &(size as PrefixType).to_le_bytes())?;
+            view.write(ptr as u64 + size_of::<PrefixType>() as u64, &buf[..size])?;
+
+            Ok(EncodedPtr::new(ptr.into()))
+        } else {
+            todo!()
+        }
+    }
+
+    pub fn free_in(&self, alloc: &WasmAllocator) {
+        let offset: u64 = self.offset.into();
+        alloc.free(offset as u32);
     }
 
     pub fn read(&self, view: &MemoryView) -> Result<T, DecodeError> {
