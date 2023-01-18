@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-use crate::{GuestFunctionCreator, GuestFunctionHandle, WasmAllocator, WasmAllocatorOptions};
+use crate::{
+    CallbackRef, GuestFunctionCreator, GuestFunctionHandle, WasmAllocator, WasmAllocatorOptions,
+};
 use parking_lot::RwLock;
 use std::{
     any::{Any, TypeId},
@@ -16,7 +18,7 @@ pub trait WasmEnv: Any + Send + 'static + Sized {}
 impl<T> WasmEnv for T where T: Any + Send + 'static + Sized {}
 
 pub struct WasmPlugin {
-    exports: HashMap<TypeId, u128>,
+    exports: HashMap<TypeId, CallbackRef>,
     store: Arc<RwLock<Store>>,
     alloc: WasmAllocator,
     instance: Instance,

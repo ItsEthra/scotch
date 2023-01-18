@@ -1,9 +1,10 @@
 use eyre::Result;
 use scotch_host::{
-    host_function, make_imports, GuestFunctionCreator, GuestFunctionHandle, WasmPlugin,
+    host_function, make_imports, CallbackRef, GuestFunctionCreator, GuestFunctionHandle,
+    RuntimeError, WasmPlugin,
 };
 use std::{any::TypeId, mem::transmute};
-use wasmer::{RuntimeError, TypedFunction};
+use wasmer::TypedFunction;
 
 const PLUGIN: &[u8] = include_bytes!("../plugin.wasm");
 
@@ -23,16 +24,16 @@ fn print_number(a: i32) {
 
 fn main() -> Result<()> {
     struct AddNumberHandle;
-    impl GuestFunctionHandle for AddNumberHandle {
+    unsafe impl GuestFunctionHandle for AddNumberHandle {
         type Callback = Box<dyn Fn(i32) -> Result<i32, RuntimeError>>;
     }
 
-    impl GuestFunctionCreator for AddNumberHandle {
+    unsafe impl GuestFunctionCreator for AddNumberHandle {
         fn create(
             &self,
             store: scotch_host::StoreRef,
             exports: &scotch_host::Exports,
-        ) -> (TypeId, u128) {
+        ) -> (TypeId, CallbackRef) {
             let typedfn: TypedFunction<i32, i32> = exports
                 .get_typed_function(&*store.read(), "add_number")
                 .unwrap();
