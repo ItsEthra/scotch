@@ -2,41 +2,33 @@ use common::Object;
 use eyre::Result;
 use scotch_host::{guest_functions, host_function, make_exports, make_imports, WasmPlugin};
 
-const PLUGIN: &[u8] = include_bytes!("../plugin.wasm");
+const PLUGIN_BYTES: &[u8] = include_bytes!("../plugin.wasm");
 
-mod other {
-    use scotch_host::host_function;
-
-    #[host_function]
-    pub fn get_number(a: i32) -> i32 {
-        a + 5
-    }
+/* pub struct Object {
+    pub a: f32,
+    pub b: i32,
+} */
+guest_functions! {
+    pub object_add_up => fn(obj: Object) -> f32
 }
 
 #[host_function]
-fn print_number(a: i32) {
-    println!("Number from wasm: {a}");
-}
-
-guest_functions! {
-    pub add_number as AddNumber => fn(named: i32) -> f32,
-    pub add_all => fn(obj: Object) -> f32
+fn print_number(value: i32) {
+    println!("Print from wasm: {value}");
 }
 
 fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
         .with_env(())
-        .with_imports(make_imports![other::get_number, print_number])
-        .with_exports(make_exports![AddNumber, add_all])
-        .from_binary(PLUGIN)?
+        .with_imports(make_imports![print_number])
+        .with_exports(make_exports![object_add_up])
+        .from_binary(PLUGIN_BYTES)?
         .finish()?;
 
-    let val = plugin.function::<AddNumber>()(15)?;
-    dbg!(val);
+    let val = plugin.function::<object_add_up>()(Object { a: 5.3, b: 4 })?;
+    assert_eq!(val, 9.3);
 
-    let all = plugin.function::<add_all>()(Object { a: 5.3, b: 4 })?;
-
-    dbg!(all);
+    println!("Success");
 
     Ok(())
 }
