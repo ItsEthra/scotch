@@ -9,6 +9,14 @@ pub struct EncodedPtr<T: Encode + Decode, M: MemorySize = Memory32> {
 }
 
 impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
+    #[inline]
+    pub(crate) fn new(offset: M::Offset) -> Self {
+        Self {
+            offset,
+            _ty: PhantomData,
+        }
+    }
+
     pub fn read(&self, view: &MemoryView) -> Result<T, DecodeError> {
         let offset: u64 = self.offset.into();
         let mut size = [0, 0];
@@ -33,11 +41,8 @@ where
     type Native = M::Native;
 
     #[inline]
-    fn from_native(native: Self::Native) -> Self {
-        Self {
-            offset: M::native_to_offset(native),
-            _ty: PhantomData,
-        }
+    fn from_native(_: Self::Native) -> Self {
+        unimplemented!("Returning `EncodedPtr` from guest functions is not allwed")
     }
 
     #[inline]

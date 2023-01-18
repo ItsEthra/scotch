@@ -1,17 +1,20 @@
 #![allow(dead_code)]
 
 use crate::{
-    CallbackRef, GuestFunctionCreator, GuestFunctionHandle, WasmAllocator, WasmAllocatorOptions,
+    CallbackRef, EncodedPtr, GuestFunctionCreator, GuestFunctionHandle, WasmAllocator,
+    WasmAllocatorOptions,
 };
+use bincode::{config::standard, Decode, Encode};
 use parking_lot::RwLock;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    mem::transmute,
+    mem::{size_of, transmute},
     sync::Arc,
 };
 use wasmer::{
-    CompileError, Extern, FunctionEnv, Imports, Instance, InstantiationError, Module, Store,
+    CompileError, Extern, FunctionEnv, Imports, Instance, InstantiationError, MemoryAccessError,
+    Module, Store,
 };
 
 pub trait WasmEnv: Any + Send + 'static + Sized {}
@@ -27,6 +30,36 @@ pub struct WasmPlugin {
 impl WasmPlugin {
     pub fn builder<E: WasmEnv>() -> WasmPluginBuilder<E> {
         WasmPluginBuilder::new()
+    }
+
+    pub fn new_encoded<T: Encode + Decode>(
+        &self,
+        value: T,
+    ) -> Result<EncodedPtr<T>, MemoryAccessError> {
+        let mut buf = [0u8; 256];
+        let view = self
+            .instance
+            .exports
+            .get_memory("memory")
+            .unwrap()
+            .view(&*self.store.read());
+
+        type PrefixType = u16;
+
+        // First try encoding to the stack if the object is small,
+        // otherwise encode to the heap.
+        if let Ok(size) = bincode::encode_into_slice(value, &mut buf[..], standard()) {
+            let ptr = self
+                .alloc
+                .alloc((size + size_of::<PrefixType>()) as u32)
+                .expect("Allocation failed");
+            view.write(ptr as u64, &(size as PrefixType).to_le_bytes())?;
+            view.write(ptr as u64 + size_of::<PrefixType>() as u64, &buf[..size])?;
+
+            Ok(EncodedPtr::new(ptr))
+        } else {
+            todo!()
+        }
     }
 
     pub fn function<H: GuestFunctionHandle + 'static>(&self) -> &H::Callback {

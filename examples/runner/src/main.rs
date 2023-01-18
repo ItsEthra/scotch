@@ -1,5 +1,8 @@
+use common::Object;
 use eyre::Result;
-use scotch_host::{guest_functions, host_function, make_exports, make_imports, WasmPlugin};
+use scotch_host::{
+    guest_functions, host_function, make_exports, make_imports, EncodedPtr, WasmPlugin,
+};
 
 const PLUGIN: &[u8] = include_bytes!("../plugin.wasm");
 
@@ -18,19 +21,24 @@ fn print_number(a: i32) {
 }
 
 guest_functions! {
-    pub add_number as AddNumber => fn(named: i32) -> i32
+    pub add_number as AddNumber => fn(named: i32) -> i32,
+    pub add_all => fn(obj: EncodedPtr<Object>) -> f32
 }
 
 fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
         .with_env(())
         .with_imports(make_imports![other::get_number, print_number])
-        .with_exports(make_exports![AddNumber])
+        .with_exports(make_exports![AddNumber, add_all])
         .from_binary(PLUGIN)?
         .finish()?;
 
     let val = plugin.function::<AddNumber>()(15)?;
     dbg!(val);
+
+    let enc = plugin.new_encoded(Object { a: 5.3, b: 4 })?;
+    let all = plugin.function::<add_all>()(enc)?;
+    dbg!(all);
 
     Ok(())
 }
