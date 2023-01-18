@@ -1,8 +1,13 @@
 #![allow(dead_code)]
 
-use crate::{WasmAllocator, WasmAllocatorOptions};
+use crate::{GuestFunctionCreator, GuestFunctionHandle, WasmAllocator, WasmAllocatorOptions};
 use parking_lot::RwLock;
-use std::{any::Any, sync::Arc};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    mem::transmute,
+    sync::Arc,
+};
 use wasmer::{
     CompileError, Extern, FunctionEnv, Imports, Instance, InstantiationError, Module, Store,
 };
@@ -10,19 +15,21 @@ use wasmer::{
 pub trait WasmEnv: Any + Send + 'static + Sized {}
 impl<T> WasmEnv for T where T: Any + Send + 'static + Sized {}
 
-struct Managed {
-    store: RwLock<Store>,
-    instance: Instance,
-    alloc: WasmAllocator,
-}
-
 pub struct WasmPlugin {
-    managed: Arc<Managed>,
+    exports: HashMap<TypeId, u128>,
+    store: Arc<RwLock<Store>>,
+    alloc: WasmAllocator,
+    instance: Instance,
 }
 
 impl WasmPlugin {
     pub fn builder<E: WasmEnv>() -> WasmPluginBuilder<E> {
         WasmPluginBuilder::new()
+    }
+
+    pub fn function<H: GuestFunctionHandle + 'static>(&self) -> &H::Callback {
+        let export = self.exports.get(&TypeId::of::<H>()).unwrap();
+        unsafe { transmute(export) }
     }
 }
 
@@ -31,6 +38,7 @@ pub struct WasmPluginBuilder<E: WasmEnv> {
     module: Option<Module>,
     alloc_opts: WasmAllocatorOptions,
     imports: Option<Imports>,
+    exports: Vec<Box<dyn GuestFunctionCreator>>,
     func_env: Option<FunctionEnv<E>>,
 }
 
@@ -43,6 +51,7 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
             alloc_opts: WasmAllocatorOptions::default(),
             imports: None,
             func_env: None,
+            exports: vec![],
         }
     }
 
@@ -81,6 +90,14 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
         self
     }
 
+    pub fn with_exports(
+        mut self,
+        exports: impl IntoIterator<Item = Box<dyn GuestFunctionCreator>>,
+    ) -> Self {
+        self.exports.extend(exports);
+        self
+    }
+
     pub fn finish(mut self) -> Result<WasmPlugin, InstantiationError> {
         let instance = Instance::new(
             &mut self.store,
@@ -89,6 +106,7 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
                 .expect("You need to call `from_binary` first"),
             &self.imports.unwrap_or_default(),
         )?;
+
         let memory = instance
             .exports
             .get_memory("memory")
@@ -96,14 +114,19 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
         let alloc = WasmAllocator::new(&mut self.store, &memory, self.alloc_opts)
             .expect("Failed to create allocator. Memory grow failed");
 
-        let managed = Managed {
-            store: self.store.into(),
-            instance,
-            alloc,
-        };
+        let store: Arc<RwLock<Store>> = Arc::new(self.store.into());
+
+        let exports = self
+            .exports
+            .into_iter()
+            .map(|ex| ex.create(store.clone(), &instance.exports))
+            .collect::<HashMap<_, _>>();
 
         Ok(WasmPlugin {
-            managed: Arc::new(managed),
+            store,
+            exports,
+            instance,
+            alloc,
         })
     }
 }
