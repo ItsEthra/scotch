@@ -1,6 +1,6 @@
+use crate::MemorySize;
 use bincode::{config::standard, error::DecodeError, Decode, Encode};
 use core::{marker::PhantomData, slice::from_raw_parts};
-use crate::MemorySize;
 
 #[repr(transparent)]
 pub struct EncodedPtr<T: Encode + Decode> {

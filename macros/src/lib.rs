@@ -1,6 +1,12 @@
+use heck::ToPascalCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse::Parser, parse_macro_input, punctuated::Punctuated, Ident, ItemFn, Path, Token};
+use syn::{
+    parse::{Parse, ParseStream, Parser},
+    parse_macro_input,
+    punctuated::Punctuated,
+    Ident, ItemFn, Path, ReturnType, Token, Type, TypeBareFn, Visibility,
+};
 
 #[proc_macro_attribute]
 pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -37,6 +43,102 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     out.into()
+}
+
+#[proc_macro]
+pub fn guest_functions(input: TokenStream) -> TokenStream {
+    #[derive(Debug)]
+    #[allow(dead_code)]
+    struct GuestFunction {
+        vis: Visibility,
+        name: Ident,
+        arr: Token![=>],
+        ty: TypeBareFn,
+    }
+
+    impl Parse for GuestFunction {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            Ok(Self {
+                vis: input.parse()?,
+                name: input.parse()?,
+                arr: input.parse()?,
+                ty: input.parse()?,
+            })
+        }
+    }
+
+    let parser = Punctuated::<GuestFunction, Token![,]>::parse_terminated;
+    let guest_fns = parser
+        .parse(input)
+        .expect("Invalid guest_functions invokation.");
+
+    let handles = guest_fns
+        .into_iter()
+        .map(|mut f| {
+            if let ReturnType::Type(_, ref mut ty) = f.ty.output {
+                let Type::Path(ty) = ty.as_mut() else { panic!("Bad return type"); };
+                ty.path = syn::parse2(quote!(Result<#ty, scotch_host::RuntimeError>)).unwrap();
+            } else {
+                f.ty.output = syn::parse2(quote!(Result<(), scotch_host::RuntimeError>)).unwrap();
+            };
+
+            let export_ident = &f.name;
+            let handle_ident = format_ident!("{}Handle", f.name.to_string().to_pascal_case());
+            let vis = f.vis;
+
+            let arg_types = f.ty.inputs
+                .iter()
+                .map(|arg| arg.ty.clone())
+                .collect::<Vec<_>>();
+
+            let return_type = f.ty.output.clone();
+
+            let typed_fn_args = if f.ty.inputs.len() == 1 {
+                quote!(#(#arg_types)*)
+            } else {
+                quote!((#(#arg_types),*))
+            };
+
+            let arg_names = f.ty.inputs
+                .into_iter()
+                .enumerate()
+                .map(|(i, arg)| 
+                    arg.name.map(|(i, _)| i).unwrap_or_else(|| format_ident!("arg{i}"))
+                );
+            let arg_names2 = arg_names.clone();
+
+            quote! {
+                #vis struct #handle_ident;
+                unsafe impl scotch_host::GuestFunctionHandle for #handle_ident {
+                    type Callback = Box<dyn Fn(#(#arg_types),*) #return_type>;
+                }
+
+                unsafe impl scotch_host::GuestFunctionCreator for #handle_ident {
+                    fn create(
+                        &self,
+                        store: scotch_host::StoreRef,
+                        exports: &scotch_host::Exports,
+                    ) -> (std::any::TypeId, scotch_host::CallbackRef) {
+                        let typed_fn: scotch_host::TypedFunction<#typed_fn_args, _> = exports
+                            .get_typed_function(&*store.read(), stringify!(#export_ident))
+                            .unwrap();
+
+                        let callback = Box::new(move |#(#arg_names),*| {
+                            typed_fn.call(&mut *store.write(), #(#arg_names2),*)
+                        }) as <Self as scotch_host::GuestFunctionHandle>::Callback;
+
+                        (std::any::TypeId::of::<#handle_ident>(), unsafe { std::mem::transmute(callback) })
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let output = quote! {
+        #(#handles)*
+    };
+
+    output.into()
 }
 
 #[proc_macro]

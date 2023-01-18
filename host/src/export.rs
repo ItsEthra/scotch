@@ -1,7 +1,7 @@
 use parking_lot::RwLock;
 use std::{any::TypeId, sync::Arc};
 
-pub use wasmer::{Exports, RuntimeError, Store};
+pub use wasmer::{Exports, RuntimeError, Store, TypedFunction};
 
 pub type StoreRef = Arc<RwLock<Store>>;
 
