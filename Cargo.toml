@@ -6,6 +6,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 bincode = "2.0.0-rc.2"
+parking_lot = "0.12"
 wasmer = "3"
 
 macros = { path = "macros" }

@@ -7,5 +7,6 @@ authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
 [dependencies]
+parking_lot.workspace = true
 bincode.workspace = true
 wasmer.workspace = true
