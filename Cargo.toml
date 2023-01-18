@@ -1,5 +1,5 @@
 [workspace]
-members = ["host", "guest", "macros", "examples/*"]
+members = ["host", "guest", "host-macros", "examples/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,7 +9,7 @@ bincode = "2.0.0-rc.2"
 parking_lot = "0.12"
 wasmer = "3"
 
-scotch-macros = { path = "macros" }
+scotch-host-macros = { path = "host-macros" }
 
 [profile.release]
 lto = true

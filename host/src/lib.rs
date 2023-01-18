@@ -10,4 +10,4 @@ pub use plugin::*;
 mod export;
 pub use export::*;
 
-pub use scotch_macros::*;
+pub use scotch_host_macros::*;

@@ -785,7 +785,6 @@ name = "scotch-guest"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "scotch-macros",
 ]
 
 [[package]]
@@ -794,12 +793,12 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "parking_lot",
- "scotch-macros",
+ "scotch-host-macros",
  "wasmer",
 ]
 
 [[package]]
-name = "scotch-macros"
+name = "scotch-host-macros"
 version = "0.1.0"
 dependencies = [
  "heck",

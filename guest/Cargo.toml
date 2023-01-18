@@ -6,9 +6,5 @@ license = "MIT"
 authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
-[features]
-default = ["scotch-macros"]
-
 [dependencies]
-scotch-macros = { path = "../macros", optional = true }
 bincode.workspace = true
