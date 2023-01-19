@@ -48,8 +48,8 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
                 .expect("Memory is missing")
                 .view(store);
 
-            view.write(ptr as u64, &(size as PrefixType).to_le_bytes())?;
-            view.write(ptr as u64 + size_of::<PrefixType>() as u64, &buf[..size])?;
+            view.write(ptr, &(size as PrefixType).to_le_bytes())?;
+            view.write(ptr + size_of::<PrefixType>() as u64, &buf[..size])?;
 
             if let Ok(offset) = ptr.try_into() {
                 Ok(EncodedPtr {
