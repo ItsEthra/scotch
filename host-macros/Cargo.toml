@@ -6,15 +6,9 @@ license = "MIT"
 authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
-[features]
-host = []
-guest = []
-
 [lib]
 proc-macro = true
 
 [dependencies]
 syn = { version = "1", features = ["extra-traits", "full"] }
-proc-macro2 = "1"
-heck = "0.4"
 quote = "1"

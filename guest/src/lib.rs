@@ -7,3 +7,5 @@ type MemorySize = u64;
 
 mod encoded;
 pub use encoded::*;
+
+pub use scotch_guest_macros::*;
