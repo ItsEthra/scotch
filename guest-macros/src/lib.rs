@@ -1,10 +1,69 @@
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{parse_macro_input, parse_quote, FnArg, ItemFn, Pat, Stmt, Type};
+use quote::{format_ident, quote};
+use syn::{
+    parse_macro_input, parse_quote, FnArg, ForeignItem, ItemFn, ItemForeignMod, Pat, Signature,
+    Stmt, Type,
+};
 
 #[proc_macro_attribute]
 pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
-    input
+    let host_funcs = parse_macro_input!(input as ItemForeignMod);
+    dbg!(123);
+
+    let funcs = host_funcs
+        .items
+        .into_iter()
+        .map(|item| {
+            // I know let_else exists but unfortunatelly it breaks the formatting.
+            if let ForeignItem::Fn(func) = item {
+                func
+            } else {
+                panic!("Only functions are allowed in host_functions block")
+            }
+        })
+        .map(|mut func| {
+            let Signature {
+                ident,
+                inputs,
+                output,
+                ..
+            } = func.sig.clone();
+
+            let sig = &mut func.sig;
+
+            let fake_id = format_ident!("_host_{}", sig.ident);
+            sig.ident = fake_id.clone();
+
+            let arg_names = sig
+                .inputs
+                .iter()
+                .map(|arg| {
+                    if let FnArg::Typed(arg) = arg {
+                        arg
+                    } else {
+                        panic!("self is not allowed in host function")
+                    }
+                })
+                .map(|arg| &arg.pat);
+
+            quote! {
+                fn #ident(#inputs) #output {
+                    extern "C" {
+                        #[link_name = stringify!(#ident)]
+                        #sig;
+                    }
+
+                    unsafe {
+                        #fake_id(#(#arg_names),*)
+                    }
+                }
+            }
+        });
+
+    let out = quote! {
+        #(#funcs)*
+    };
+    out.into()
 }
 
 fn is_atom_type(ty: &str) -> bool {
