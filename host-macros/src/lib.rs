@@ -4,17 +4,17 @@ use syn::{
     parse::{Parse, ParseStream, Parser},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    BareFnArg, Ident, ItemFn, Path, ReturnType, Stmt, Token, Type, TypeBareFn, TypePath,
+    BareFnArg, Ident, ItemFn, Path, ReturnType, Stmt, Token, Type, TypeBareFn,
     Visibility,
 };
 
 #[proc_macro_attribute]
 pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     let env_type = if args.is_empty() {
-        quote!(scotch_host::FunctionEnvMut<()>)
+        quote!(scotch_host::FunctionEnvMut<scotch_host::WasmEnv<()>>)
     } else {
         let path = parse_macro_input!(args as Path);
-        quote!(scotch_host::FunctionEnvMut<#path>)
+        quote!(scotch_host::FunctionEnvMut<scotch_host::WasmEnv<#path>>)
     };
 
     let item_fn = parse_macro_input!(input as ItemFn);
@@ -35,7 +35,7 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     let block = &item_fn.block;
 
     let out = quote! {
-        #vis fn #ident(#[allow(non_snake_case)] ENV: #env_type, #args) #output {
+        #vis fn #ident(__env: #env_type, #args) #output {
             let __output = #block;
 
             __output
@@ -102,8 +102,8 @@ impl TypeData {
 
             let (disp_ty, foreign) = get_dispatch_type(arg.ty);
             if foreign {
-                out.pre_dispatch.push(parse_quote!(let #name: #disp_ty = scotch_host::EncodedPtr::new_in(#name, &*alloc, &__view).unwrap();)); 
-                out.post_dispatch.push(parse_quote!(#name.free_in(&*alloc);));
+                out.pre_dispatch.push(parse_quote!(let #name: #disp_ty = scotch_host::EncodedPtr::new_in(#name, &mut *store.write(), &*instance).unwrap();)); 
+                out.post_dispatch.push(parse_quote!(#name.free_in(&mut *store.write(), &*instance);));
             }
 
             out.dispatch_types.push(disp_ty);
@@ -133,10 +133,10 @@ fn get_dispatch_type(ty: Type) -> (Type, bool) {
 
 impl GuestFunction {
     fn into_handle(mut self) -> TokenStream2 {
-        let (callback_return_type, dispatch_return_type): (Type, TypePath) = if let ReturnType::Type(_, ref mut ty) = self.ty.output {
+        let (callback_return_type, dispatch_return_type): (Type, Type) = if let ReturnType::Type(_, ref mut ty) = self.ty.output {
             let Type::Path(ty) = ty.as_mut() else { panic!("Bad return type"); };
 
-            (parse_quote!(Result<#ty, scotch_host::RuntimeError>), ty.clone())
+            (parse_quote!(Result<#ty, scotch_host::RuntimeError>), ty.clone().into())
         } else {
             (parse_quote!(Result<(), scotch_host::RuntimeError>), parse_quote!(()))
         };
@@ -177,7 +177,6 @@ impl GuestFunction {
                 fn create(
                     &self,
                     store: scotch_host::StoreRef,
-                    alloc: scotch_host::WasmAllocRef,
                     instance: scotch_host::InstanceRef,
                     exports: &scotch_host::Exports,
                 ) -> (std::any::TypeId, scotch_host::CallbackRef) {
@@ -186,8 +185,6 @@ impl GuestFunction {
                         .unwrap();
 
                     let callback = Box::new(move |#(#callback_args),*| {
-                        let __view = instance.exports.get_memory("memory").unwrap().view(&*store.read());
-
                         #(#pre_dispatch)*
                         let out = typed_fn.call(&mut *store.write(), #(#arg_names),*);
                         #(#post_dispatch)*
@@ -204,7 +201,7 @@ impl GuestFunction {
 
 #[proc_macro]
 pub fn guest_functions(input: TokenStream) -> TokenStream {
-    let parser = Punctuated::<GuestFunction, Token![,]>::parse_terminated;
+    let parser = Punctuated::<GuestFunction, Token![;]>::parse_terminated;
     let guest_fns = parser
         .parse(input)
         .expect("Invalid guest_functions invokation");

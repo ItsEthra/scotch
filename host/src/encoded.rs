@@ -1,53 +1,86 @@
+use crate::PrefixType;
 use bincode::{config::standard, error::DecodeError, Decode, Encode};
 use std::{marker::PhantomData, mem::size_of};
 use wasmer::{
-    FromToNativeWasmType, Memory32, MemoryAccessError, MemorySize, MemoryView, NativeWasmTypeInto,
+    AsStoreMut, FromToNativeWasmType, Instance, Memory32, MemoryAccessError, MemorySize,
+    MemoryView, NativeWasmTypeInto,
 };
 
-use crate::WasmAllocator;
-
-#[repr(transparent)]
 pub struct EncodedPtr<T: Encode + Decode, M: MemorySize = Memory32> {
     pub(crate) offset: M::Offset,
+    size: usize,
     _ty: PhantomData<T>,
 }
 
 impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
-    #[inline]
-    pub(crate) fn new(offset: M::Offset) -> Self {
-        Self {
-            offset,
-            _ty: PhantomData,
-        }
-    }
-
     pub fn new_in(
         value: T,
-        alloc: &WasmAllocator,
-        view: &MemoryView,
+        store: &mut impl AsStoreMut,
+        instance: &Instance,
     ) -> Result<Self, MemoryAccessError> {
         let mut buf = [0u8; 256];
-
-        type PrefixType = u16;
 
         // First try encoding to the stack if the object is small,
         // otherwise encode to the heap.
         if let Ok(size) = bincode::encode_into_slice(value, &mut buf[..], standard()) {
-            let ptr = alloc
-                .alloc((size + size_of::<PrefixType>()) as u32)
-                .expect("Allocation failed");
+            let func = instance
+                .exports
+                .get_function("__scotch_alloc")
+                .expect("Missing __scotch_alloc wrapper");
+            let out = &func
+                .call(
+                    store,
+                    &[
+                        ((size + size_of::<PrefixType>()) as i32).into(),
+                        1i32.into(),
+                    ],
+                )
+                .expect("Alloc guest call failed")[0];
+
+            #[cfg(feature = "mem64")]
+            let ptr = out.unwrap_i64() as u64;
+            #[cfg(not(feature = "mem64"))]
+            let ptr = out.unwrap_i32() as u64;
+
+            let view = instance
+                .exports
+                .get_memory("memory")
+                .expect("Memory is missing")
+                .view(store);
+
             view.write(ptr as u64, &(size as PrefixType).to_le_bytes())?;
             view.write(ptr as u64 + size_of::<PrefixType>() as u64, &buf[..size])?;
 
-            Ok(EncodedPtr::new(ptr.into()))
+            if let Ok(offset) = ptr.try_into() {
+                Ok(EncodedPtr {
+                    offset,
+                    size,
+                    _ty: PhantomData,
+                })
+            } else {
+                unimplemented!()
+            }
         } else {
             todo!()
         }
     }
 
-    pub fn free_in(&self, alloc: &WasmAllocator) {
+    pub fn free_in(self, mut store: &mut impl AsStoreMut, instance: &Instance) {
         let offset: u64 = self.offset.into();
-        alloc.free(offset as u32);
+
+        let func = instance
+            .exports
+            .get_function("__scotch_free")
+            .expect("Missing __scotch_free wrapper");
+        func.call(
+            &mut store,
+            &[
+                (offset as i32).into(),
+                ((self.size + size_of::<PrefixType>()) as i32).into(),
+                1i32.into(),
+            ],
+        )
+        .expect("Free guest call failed");
     }
 
     pub fn read(&self, view: &MemoryView) -> Result<T, DecodeError> {
@@ -74,11 +107,8 @@ where
     type Native = M::Native;
 
     #[inline]
-    fn from_native(native: Self::Native) -> Self {
-        Self {
-            offset: M::native_to_offset(native),
-            _ty: PhantomData,
-        }
+    fn from_native(_: Self::Native) -> Self {
+        unimplemented!("Returning EncodedPtr from guest functions is not allowed")
     }
 
     #[inline]
@@ -93,6 +123,7 @@ impl<T: Encode + Decode, M: MemorySize> Clone for EncodedPtr<T, M> {
         Self {
             offset: self.offset,
             _ty: PhantomData,
+            size: self.size,
         }
     }
 }

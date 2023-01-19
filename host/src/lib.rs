@@ -1,8 +1,10 @@
+pub(crate) type PrefixType = u16;
+
 mod encoded;
 pub use encoded::*;
 
-mod alloc;
-pub use alloc::*;
+mod managed;
+pub use managed::*;
 
 mod plugin;
 pub use plugin::*;

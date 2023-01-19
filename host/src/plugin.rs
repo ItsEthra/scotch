@@ -1,56 +1,57 @@
-#![allow(dead_code)]
-
-use crate::{
-    CallbackRef, GuestFunctionCreator, GuestFunctionHandle, InstanceRef, StoreRef, WasmAllocRef,
-    WasmAllocator, WasmAllocatorOptions,
-};
+use crate::{CallbackRef, GuestFunctionCreator, GuestFunctionHandle, InstanceRef, StoreRef};
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
     mem::transmute,
-    sync::Arc,
+    sync::{Arc, Weak},
 };
 use wasmer::{
     CompileError, Extern, FunctionEnv, Imports, Instance, InstantiationError, Module, Store,
 };
 
-pub trait WasmEnv: Any + Send + 'static + Sized {}
-impl<T> WasmEnv for T where T: Any + Send + 'static + Sized {}
+pub struct WasmEnv<S: PluginState> {
+    pub instance: Weak<Instance>,
+    pub state: S,
+}
 
+pub trait PluginState: Any + Send + 'static + Sized {}
+impl<T> PluginState for T where T: Any + Send + 'static + Sized {}
+
+#[allow(dead_code)]
 pub struct WasmPlugin {
     exports: HashMap<TypeId, CallbackRef>,
     store: StoreRef,
-    alloc: WasmAllocRef,
     instance: InstanceRef,
 }
 
 impl WasmPlugin {
-    pub fn builder<E: WasmEnv>() -> WasmPluginBuilder<E> {
+    pub fn builder<E: PluginState>() -> WasmPluginBuilder<E> {
         WasmPluginBuilder::new()
     }
 
     pub fn function<H: GuestFunctionHandle + 'static>(&self) -> &H::Callback {
-        let export = self.exports.get(&TypeId::of::<H>()).unwrap();
+        let export = self
+            .exports
+            .get(&TypeId::of::<H>())
+            .expect("Export not found");
         unsafe { transmute(export) }
     }
 }
 
-pub struct WasmPluginBuilder<E: WasmEnv> {
+pub struct WasmPluginBuilder<E: PluginState> {
     store: Store,
     module: Option<Module>,
-    alloc_opts: WasmAllocatorOptions,
     imports: Option<Imports>,
     exports: Vec<Box<dyn GuestFunctionCreator>>,
-    func_env: Option<FunctionEnv<E>>,
+    func_env: Option<FunctionEnv<WasmEnv<E>>>,
 }
 
-impl<E: WasmEnv> WasmPluginBuilder<E> {
+impl<E: PluginState> WasmPluginBuilder<E> {
     #[inline]
     pub fn new() -> Self {
         Self {
             store: Store::default(),
             module: None,
-            alloc_opts: WasmAllocatorOptions::default(),
             imports: None,
             func_env: None,
             exports: vec![],
@@ -69,19 +70,20 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
         Ok(self)
     }
 
-    pub fn with_alloc_opts(mut self, alloc_opts: WasmAllocatorOptions) -> Self {
-        self.alloc_opts = alloc_opts;
-        self
-    }
-
     pub fn with_env(mut self, env: E) -> Self {
-        self.func_env = Some(FunctionEnv::new(&mut self.store, env));
+        self.func_env = Some(FunctionEnv::new(
+            &mut self.store,
+            WasmEnv {
+                instance: Weak::new(),
+                state: env,
+            },
+        ));
         self
     }
 
     pub fn with_imports(
         mut self,
-        imports: impl FnOnce(&mut Store, &FunctionEnv<E>) -> Imports,
+        imports: impl FnOnce(&mut Store, &FunctionEnv<WasmEnv<E>>) -> Imports,
     ) -> Self {
         self.imports = Some(imports(
             &mut self.store,
@@ -111,39 +113,26 @@ impl<E: WasmEnv> WasmPluginBuilder<E> {
         )?
         .into();
 
-        let memory = instance
-            .exports
-            .get_memory("memory")
-            .expect("Memory is not found. Expected `memory` export.");
+        if let Some(env) = self.func_env.as_mut() {
+            env.as_mut(&mut self.store).instance = Arc::downgrade(&instance);
+        }
 
-        let alloc: WasmAllocRef = WasmAllocator::new(&mut self.store, memory, self.alloc_opts)
-            .expect("Failed to create allocator. Memory grow failed")
-            .into();
         let store: StoreRef = Arc::new(self.store.into());
-
         let exports = self
             .exports
             .into_iter()
-            .map(|ex| {
-                ex.create(
-                    store.clone(),
-                    alloc.clone(),
-                    instance.clone(),
-                    &instance.exports,
-                )
-            })
+            .map(|ex| ex.create(store.clone(), instance.clone(), &instance.exports))
             .collect::<HashMap<_, _>>();
 
         Ok(WasmPlugin {
             store,
             exports,
             instance,
-            alloc,
         })
     }
 }
 
-impl<E: WasmEnv> Default for WasmPluginBuilder<E> {
+impl<E: PluginState> Default for WasmPluginBuilder<E> {
     #[inline]
     fn default() -> Self {
         Self::new()
