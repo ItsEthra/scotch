@@ -8,8 +8,6 @@ use syn::{
 #[proc_macro_attribute]
 pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
     let host_funcs = parse_macro_input!(input as ItemForeignMod);
-    dbg!(123);
-
     let funcs = host_funcs
         .items
         .into_iter()
