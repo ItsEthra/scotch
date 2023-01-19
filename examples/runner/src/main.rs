@@ -9,7 +9,7 @@ const PLUGIN_BYTES: &[u8] = include_bytes!("../plugin.wasm");
     pub b: i32,
 } */
 guest_functions! {
-    pub object_add_up as ObjectAddUp: fn(obj: Object) -> f32
+    pub object_add_up as ObjectAddUp: fn(obj: Object, what: (i32, f64)) -> f32
 }
 
 #[host_function]
@@ -25,7 +25,7 @@ fn main() -> Result<()> {
         .from_binary(PLUGIN_BYTES)?
         .finish()?;
 
-    let val = plugin.function::<ObjectAddUp>()(Object { a: 5.3, b: 4 })?;
+    let val = plugin.function::<ObjectAddUp>()(Object { a: 5.3, b: 4 }, (5, 32.1))?;
     assert_eq!(val, 9.3);
 
     println!("Success");

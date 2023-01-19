@@ -7,8 +7,9 @@ extern "C" {
 }
 
 #[guest_function]
-fn object_add_up(obj: Object) -> f32 {
+fn object_add_up(obj: Object, things: (i32, f64)) -> f32 {
     print_number(obj.b);
+    print_number(things.0);
 
     obj.a + obj.b as f32
 }

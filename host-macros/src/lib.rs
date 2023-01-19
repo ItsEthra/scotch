@@ -102,8 +102,8 @@ impl TypeData {
 
             let (disp_ty, foreign) = get_dispatch_type(arg.ty);
             if foreign {
-                out.pre_dispatch = parse_quote!(let #name: #disp_ty = scotch_host::EncodedPtr::new_in(#name, &*alloc, &__view).unwrap();); 
-                out.post_dispatch = parse_quote!(#name.free_in(&*alloc););
+                out.pre_dispatch.push(parse_quote!(let #name: #disp_ty = scotch_host::EncodedPtr::new_in(#name, &*alloc, &__view).unwrap();)); 
+                out.post_dispatch.push(parse_quote!(#name.free_in(&*alloc);));
             }
 
             out.dispatch_types.push(disp_ty);
