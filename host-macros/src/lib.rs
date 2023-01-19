@@ -50,7 +50,7 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
 struct GuestFunction {
     vis: Visibility,
     name: Ident,
-    arr: Token![=>],
+    arr: Token![:],
     rename: Option<Ident>,
     ty: TypeBareFn,
 }
