@@ -14,16 +14,16 @@ fn is_atom_type(ty: &str) -> bool {
 }
 
 #[derive(Clone, Copy)]
-enum TranslationMode {
+enum WrapMode {
     Encoded,
     Managed,
 }
 
-impl TranslationMode {
+impl WrapMode {
     fn wrap(self, ty: Type) -> Type {
         match self {
-            TranslationMode::Encoded => parse_quote!(scotch_guest::EncodedPtr<#ty>),
-            TranslationMode::Managed => parse_quote!(scotch_guest::ManagedPtr<#ty>),
+            WrapMode::Encoded => parse_quote!(scotch_guest::EncodedPtr<#ty>),
+            WrapMode::Managed => parse_quote!(scotch_guest::ManagedPtr<#ty>),
         }
     }
 }
@@ -33,24 +33,57 @@ enum TypeTranslation {
     Wrapped(Type),
 }
 
-impl TypeTranslation {
-    fn translate(ty: Type, mode: TranslationMode) -> Self {
-        match ty {
-            Type::Path(ref path)
-                if is_atom_type(&path.path.segments.last().unwrap().ident.to_string()) =>
-            {
-                Self::Original
-            }
-            Type::Reference(TypeReference {
-                lifetime: None,
-                mutability: None,
-                elem,
-                ..
-            }) => Self::Wrapped(mode.wrap(*elem)),
-            Type::Array(_) | Type::Tuple(_) => Self::Wrapped(mode.wrap(ty)),
-            _ => unimplemented!("Type is unsupported"),
+fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
+    match ty {
+        Type::Path(ref path)
+            if is_atom_type(&path.path.segments.last().unwrap().ident.to_string()) =>
+        {
+            TypeTranslation::Original
         }
+        Type::Reference(TypeReference {
+            lifetime: None,
+            mutability: None,
+            elem,
+            ..
+        }) => TypeTranslation::Wrapped(mode.wrap(*elem)),
+        Type::Array(_) | Type::Tuple(_) => TypeTranslation::Wrapped(mode.wrap(ty)),
+        _ => unimplemented!("Type is unsupported"),
     }
+}
+
+#[derive(Default)]
+struct HostInputTranslation {
+    prelude: Vec<Stmt>,
+}
+
+fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInputTranslation {
+    let mut out = HostInputTranslation::default();
+
+    it.map(|arg| {
+        if let FnArg::Typed(arg) = arg {
+            arg
+        } else {
+            panic!("self is not allowed in host functions")
+        }
+    })
+    .map(|arg| {
+        if let Pat::Ident(name) = arg.pat.as_mut() {
+            (name.ident.clone(), &mut arg.ty)
+        } else {
+            panic!("Invalid function argument name")
+        }
+    })
+    .for_each(|(name, ty)| {
+        if let TypeTranslation::Wrapped(new) =
+            translate_type(ty.as_ref().clone(), WrapMode::Managed)
+        {
+            *ty = Box::new(new);
+            out.prelude
+                .push(parse_quote!(let #name = scotch_guest::ManagedPtr::new(#name).unwrap();));
+        }
+    });
+
+    out
 }
 
 #[proc_macro_attribute]
@@ -76,9 +109,10 @@ pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
             } = func.sig.clone();
 
             let sig = &mut func.sig;
-
             let fake_id = format_ident!("_host_{}", sig.ident);
             sig.ident = fake_id.clone();
+
+            let HostInputTranslation { prelude } = translate_host_inputs(sig.inputs.iter_mut());
 
             let arg_names = sig
                 .inputs
@@ -100,6 +134,7 @@ pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
                     }
 
                     unsafe {
+                        #(#prelude)*
                         #fake_id(#(#arg_names),*)
                     }
                 }
@@ -126,7 +161,7 @@ fn translate_guest_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> GuestI
         (id.ident.clone(), &mut arg.ty)
     })
     .for_each(|(name, ty)| {
-        if let TypeTranslation::Wrapped(new) = TypeTranslation::translate(ty.as_ref().clone(), TranslationMode::Encoded) {
+        if let TypeTranslation::Wrapped(new) = translate_type(ty.as_ref().clone(), WrapMode::Encoded) {
             out.prelude
                 .push(parse_quote!(let #name: #ty = &unsafe { #name.read().expect("Guest was given invalid pointer") };));
             *ty = Box::new(new);
