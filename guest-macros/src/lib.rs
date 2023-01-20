@@ -47,7 +47,7 @@ fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
             ..
         }) => TypeTranslation::Wrapped(mode.wrap(*elem)),
         Type::Array(_) | Type::Tuple(_) => TypeTranslation::Wrapped(mode.wrap(ty)),
-        _ => unimplemented!("Type is unsupported"),
+        _ => unimplemented!("Type is unsupported, consider using a reference instead."),
     }
 }
 

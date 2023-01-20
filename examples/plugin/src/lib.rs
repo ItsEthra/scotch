@@ -18,3 +18,8 @@ fn object_add_up(obj: &Object) -> f32 {
 
     obj.a + obj.b as f32
 }
+
+#[guest_function]
+fn print_numbers(things: &Vec<i32>) {
+    things.iter().copied().for_each(print_number);
+}

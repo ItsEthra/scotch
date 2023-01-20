@@ -10,6 +10,7 @@ const PLUGIN_BYTES: &[u8] = include_bytes!("../plugin.wasm");
 } */
 guest_functions! {
     pub object_add_up as ObjectAddUp: fn(obj: &Object) -> f32;
+    pub print_numbers: fn(nums: &Vec<i32>);
 }
 
 #[host_function(i32)]
@@ -28,7 +29,7 @@ fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
         .with_env(0)
         .with_imports(make_imports![print_number, accept_object])
-        .with_exports(make_exports![ObjectAddUp])
+        .with_exports(make_exports![ObjectAddUp, print_numbers])
         .from_binary(PLUGIN_BYTES)?
         .finish()?;
 
@@ -38,6 +39,8 @@ fn main() -> Result<()> {
         b: 11,
         t: 5,
     })?);
+
+    plugin.function::<print_numbers>()(&vec![1, 2, 3])?;
 
     Ok(())
 }
