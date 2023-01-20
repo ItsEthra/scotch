@@ -10,10 +10,10 @@ extern "C" {
 }
 
 #[guest_function]
-fn object_add_up(obj: Object) -> f32 {
+fn object_add_up(obj: &Object) -> f32 {
     print_number(obj.b);
 
-    let ptr = ManagedPtr::new(&obj).unwrap();
+    let ptr = ManagedPtr::new(obj).unwrap();
     accept_object(ptr);
 
     obj.a + obj.b as f32
