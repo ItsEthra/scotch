@@ -12,19 +12,21 @@ guest_functions! {
     pub object_add_up as ObjectAddUp: fn(obj: &Object) -> f32;
 }
 
-#[host_function]
+#[host_function(i32)]
 fn print_number(value: i32) {
+    *STATE += 1;
+    dbg!(*STATE);
     println!("Print from wasm: {value}");
 }
 
-#[host_function]
+#[host_function(i32)]
 fn accept_object(obj: &Object) {
     dbg!(obj);
 }
 
 fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
-        .with_env(())
+        .with_env(0)
         .with_imports(make_imports![print_number, accept_object])
         .with_exports(make_exports![ObjectAddUp])
         .from_binary(PLUGIN_BYTES)?

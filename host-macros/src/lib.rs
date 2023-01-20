@@ -117,9 +117,12 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     let block = &item_fn.block;
 
     let out = quote! {
-        #vis fn #ident(__env: #env_type, #args) #output {
+        #vis fn #ident(mut __env: #env_type, #args) #output {
             let __instance = __env.data().instance.upgrade().unwrap();
             let __view = __instance.exports.get_memory("memory").unwrap().view(&__env);
+
+            #[allow(non_snake_case)]
+            let STATE = &mut __env.data_mut().state;
 
             #(#prelude)*
             let __output = #block;

@@ -12,6 +12,7 @@ extern "C" {
 #[guest_function]
 fn object_add_up(obj: &Object) -> f32 {
     print_number(obj.b);
+    print_number(obj.a as i32);
 
     accept_object(obj);
 
