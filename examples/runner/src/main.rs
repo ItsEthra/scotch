@@ -1,9 +1,6 @@
 use common::Object;
 use eyre::Result;
-use scotch_host::{
-    guest_functions, host_function, make_exports, make_imports, Instance, ManagedPtr, WasmPlugin,
-};
-use std::sync::Arc;
+use scotch_host::{guest_functions, host_function, make_exports, make_imports, WasmPlugin};
 
 const PLUGIN_BYTES: &[u8] = include_bytes!("../plugin.wasm");
 
@@ -21,11 +18,8 @@ fn print_number(value: i32) {
 }
 
 #[host_function]
-fn accept_object(obj: ManagedPtr<Object>) {
-    let ins: Arc<Instance> = __env.data().instance.upgrade().unwrap();
-    let view = ins.exports.get_memory("memory").unwrap().view(&__env);
-
-    _ = dbg!(obj.read(&view));
+fn accept_object(obj: &Object) {
+    dbg!(obj);
 }
 
 fn main() -> Result<()> {
@@ -37,9 +31,10 @@ fn main() -> Result<()> {
         .finish()?;
 
     dbg!(plugin.function::<ObjectAddUp>()(&Object {
+        thing: "123".into(),
         a: 123.5,
         b: 11,
-        t: 5
+        t: 5,
     })?);
 
     Ok(())

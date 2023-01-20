@@ -4,8 +4,8 @@ use syn::{
     parse::{Parse, ParseStream, Parser},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    BareFnArg, Ident, ItemFn, Path, ReturnType, Stmt, Token, Type, TypeBareFn, TypeReference,
-    Visibility,
+    BareFnArg, FnArg, Ident, ItemFn, Pat, Path, ReturnType, Stmt, Token, Type, TypeBareFn,
+    TypeReference, Visibility,
 };
 
 fn is_atom_type(ty: &str) -> bool {
@@ -52,6 +52,41 @@ fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
     }
 }
 
+#[derive(Default)]
+struct HostInputTranslation {
+    prelude: Vec<Stmt>,
+}
+
+fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInputTranslation {
+    let mut out = HostInputTranslation::default();
+
+    it.map(|arg| {
+        if let FnArg::Typed(arg) = arg {
+            arg
+        } else {
+            panic!("self is not allowed in host functions")
+        }
+    })
+    .map(|arg| {
+        if let Pat::Ident(id) = arg.pat.as_mut() {
+            (&id.ident, &mut arg.ty)
+        } else {
+            panic!("Invalid host function argument name")
+        }
+    })
+    .for_each(|(name, ty)| {
+        if let TypeTranslation::Wrapped(new) =
+            translate_type(ty.as_ref().clone(), WrapMode::Managed)
+        {
+            out.prelude
+                .push(parse_quote!(let #name: #ty = &#name.read(&__view).unwrap();));
+            *ty.as_mut() = new;
+        }
+    });
+
+    out
+}
+
 #[proc_macro_attribute]
 pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     let env_type = if args.is_empty() {
@@ -61,7 +96,7 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
         quote!(scotch_host::FunctionEnvMut<scotch_host::WasmEnv<#path>>)
     };
 
-    let item_fn = parse_macro_input!(input as ItemFn);
+    let mut item_fn = parse_macro_input!(input as ItemFn);
     assert!(
         item_fn.sig.asyncness.is_none(),
         "Host function can not be async"
@@ -73,6 +108,9 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let ident = &item_fn.sig.ident;
     let vis = &item_fn.vis;
+
+    let HostInputTranslation { prelude } = translate_host_inputs(item_fn.sig.inputs.iter_mut());
+
     let args = &item_fn.sig.inputs;
 
     let output = &item_fn.sig.output;
@@ -80,6 +118,10 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let out = quote! {
         #vis fn #ident(__env: #env_type, #args) #output {
+            let __instance = __env.data().instance.upgrade().unwrap();
+            let __view = __instance.exports.get_memory("memory").unwrap().view(&__env);
+
+            #(#prelude)*
             let __output = #block;
 
             __output
