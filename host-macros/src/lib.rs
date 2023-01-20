@@ -1,12 +1,56 @@
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, __private::TokenStream as TokenStream2};
+use quote::{__private::TokenStream as TokenStream2, format_ident, quote};
 use syn::{
     parse::{Parse, ParseStream, Parser},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    BareFnArg, Ident, ItemFn, Path, ReturnType, Stmt, Token, Type, TypeBareFn,
+    BareFnArg, Ident, ItemFn, Path, ReturnType, Stmt, Token, Type, TypeBareFn, TypeReference,
     Visibility,
 };
+
+fn is_atom_type(ty: &str) -> bool {
+    const ATOMS: &[&str] = &[
+        "bool", "char", "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64",
+    ];
+
+    ATOMS.iter().any(|&a| a == ty)
+}
+
+#[derive(Clone, Copy)]
+enum WrapMode {
+    Encoded,
+    Managed,
+}
+
+impl WrapMode {
+    fn wrap(self, ty: Type) -> Type {
+        match self {
+            WrapMode::Encoded => parse_quote!(scotch_host::EncodedPtr<#ty>),
+            WrapMode::Managed => parse_quote!(scotch_host::ManagedPtr<#ty>),
+        }
+    }
+}
+
+enum TypeTranslation {
+    Original,
+    Wrapped(Type),
+}
+
+fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
+    match ty {
+        Type::Path(path) if is_atom_type(&path.path.segments.last().unwrap().ident.to_string()) => {
+            TypeTranslation::Original
+        }
+        Type::Reference(TypeReference {
+            lifetime: None,
+            mutability: None,
+            elem,
+            ..
+        }) => TypeTranslation::Wrapped(mode.wrap(*elem)),
+        Type::Array(_) | Type::Tuple(_) => TypeTranslation::Wrapped(mode.wrap(ty)),
+        _ => unimplemented!("Type is unsupported"),
+    }
+}
 
 #[proc_macro_attribute]
 pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -82,7 +126,7 @@ impl Parse for GuestFunction {
 }
 
 #[derive(Debug, Default)]
-struct TypeData {
+struct HandleGenerationData {
     callback_types: Vec<Type>,
     callback_args: Vec<BareFnArg>,
     dispatch_types: Vec<Type>,
@@ -90,68 +134,66 @@ struct TypeData {
     post_dispatch: Vec<Stmt>,
 }
 
-impl TypeData {
-    fn prepare(args: impl Iterator<Item = BareFnArg>) -> Self {
-        let mut out = Self::default();
+fn prepare_handle_gen_data(args: impl Iterator<Item = BareFnArg>) -> HandleGenerationData {
+    let mut out = HandleGenerationData::default();
 
-        args.into_iter().enumerate().for_each(|(i, arg)| {
-            out.callback_types.push(arg.ty.clone());
-            let name = arg.name.map(|(i, _)| i).unwrap_or_else(|| format_ident!("arg{i}"));
-            let ty = &arg.ty;
-            out.callback_args.push(parse_quote!(#name: #ty));
+    args.into_iter().enumerate().for_each(|(i, arg)| {
+        out.callback_types.push(arg.ty.clone());
+        let name = arg
+            .name
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| format_ident!("arg{i}"));
+        let ty = &arg.ty;
+        out.callback_args.push(parse_quote!(#name: #ty));
 
-            let (disp_ty, foreign) = get_dispatch_type(arg.ty);
-            if foreign {
-                out.pre_dispatch.push(parse_quote!(let #name: #disp_ty = scotch_host::EncodedPtr::new_in(#name, &mut *store.write(), &*instance).unwrap();)); 
-                out.post_dispatch.push(parse_quote!(#name.free_in(&mut *store.write(), &*instance);));
+        match translate_type(arg.ty.clone(), WrapMode::Encoded) {
+            TypeTranslation::Wrapped(new) => {
+                let pre = parse_quote! {
+                    let #name: #new = scotch_host::EncodedPtr::new_in(#name, &mut *store.write(), &*instance).unwrap();
+                };
+                let post = parse_quote! {
+                    #name.free_in(&mut *store.write(), &*instance);
+                };
+
+                out.pre_dispatch.push(pre);
+                out.post_dispatch.push(post);
+                out.dispatch_types.push(new);
             }
+            TypeTranslation::Original => out.dispatch_types.push(arg.ty),
+        }
+    });
 
-            out.dispatch_types.push(disp_ty);
-        });
-
-        out
-    }
-}
-
-fn is_atom_type(ty: &str) -> bool {
-    const ATOMS: &[&str] = &[
-        "bool", "char",
-        "u8", "u16", "u32", "u64",
-        "i8", "i16", "i32", "i64",
-    ];
-
-    ATOMS.iter().any(|&a| a == ty)
-}
-
-fn get_dispatch_type(ty: Type) -> (Type, bool) {
-    match ty {
-        Type::Path(ref path) if path.path.segments.len() == 1 &&
-            is_atom_type(&path.path.segments.first().unwrap().ident.to_string()) => (ty, false),
-        _ => (parse_quote!(scotch_host::EncodedPtr<#ty>), true),
-    }
+    out
 }
 
 impl GuestFunction {
     fn into_handle(mut self) -> TokenStream2 {
-        let (callback_return_type, dispatch_return_type): (Type, Type) = if let ReturnType::Type(_, ref mut ty) = self.ty.output {
-            let Type::Path(ty) = ty.as_mut() else { panic!("Bad return type"); };
+        let (callback_return_type, dispatch_return_type): (Type, Type) =
+            if let ReturnType::Type(_, ref mut ty) = self.ty.output {
+                let Type::Path(ty) = ty.as_mut() else { panic!("Bad return type"); };
 
-            (parse_quote!(Result<#ty, scotch_host::RuntimeError>), ty.clone().into())
-        } else {
-            (parse_quote!(Result<(), scotch_host::RuntimeError>), parse_quote!(()))
-        };
+                (
+                    parse_quote!(Result<#ty, scotch_host::RuntimeError>),
+                    ty.clone().into(),
+                )
+            } else {
+                (
+                    parse_quote!(Result<(), scotch_host::RuntimeError>),
+                    parse_quote!(()),
+                )
+            };
 
         let export_ident = &self.name;
         let handle_ident = self.rename.unwrap_or_else(|| self.name.clone());
         let vis = self.vis;
 
-        let TypeData {
+        let HandleGenerationData {
             callback_types,
             callback_args,
             pre_dispatch,
             post_dispatch,
             dispatch_types,
-        } = TypeData::prepare(self.ty.inputs.clone().into_iter());
+        } = prepare_handle_gen_data(self.ty.inputs.clone().into_iter());
 
         let dispatch_types = if dispatch_types.len() == 1 {
             quote!(#(#dispatch_types)*)
@@ -159,12 +201,12 @@ impl GuestFunction {
             quote!((#(#dispatch_types),*))
         };
 
-        let arg_names = callback_args
-            .iter()
-            .enumerate()
-            .map(|(i, arg)| {
-                arg.name.clone().map(|(i, _)| i).unwrap_or_else(|| format_ident!("arg{i}"))
-            });
+        let arg_names = callback_args.iter().enumerate().map(|(i, arg)| {
+            arg.name
+                .clone()
+                .map(|(i, _)| i)
+                .unwrap_or_else(|| format_ident!("arg{i}"))
+        });
 
         quote! {
             #[allow(non_camel_case_types)]

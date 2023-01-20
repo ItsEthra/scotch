@@ -14,7 +14,7 @@ pub struct EncodedPtr<T: Encode + Decode, M: MemorySize = Memory32> {
 
 impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
     pub fn new_in(
-        value: T,
+        value: &T,
         store: &mut impl AsStoreMut,
         instance: &Instance,
     ) -> Result<Self, MemoryAccessError> {

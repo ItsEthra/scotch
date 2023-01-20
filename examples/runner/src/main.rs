@@ -12,7 +12,7 @@ const PLUGIN_BYTES: &[u8] = include_bytes!("../plugin.wasm");
     pub b: i32,
 } */
 guest_functions! {
-    pub object_add_up as ObjectAddUp: fn(obj: Object) -> f32;
+    pub object_add_up as ObjectAddUp: fn(obj: &Object) -> f32;
 }
 
 #[host_function]
@@ -36,11 +36,11 @@ fn main() -> Result<()> {
         .from_binary(PLUGIN_BYTES)?
         .finish()?;
 
-    _ = dbg!(plugin.function::<ObjectAddUp>()(Object {
+    dbg!(plugin.function::<ObjectAddUp>()(&Object {
         a: 123.5,
         b: 11,
         t: 5
-    }));
+    })?);
 
     Ok(())
 }
