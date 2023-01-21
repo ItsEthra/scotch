@@ -92,6 +92,13 @@ fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInp
     out
 }
 
+/// Macro used to annotate `extern` blocks that contain plugin imports.
+/// ```ignore
+/// #[scotch_guest::host_functions]
+/// extern "C" {
+///     fn print(val: &String);
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
     let host_funcs = parse_macro_input!(input as ItemForeignMod);
@@ -172,6 +179,13 @@ fn translate_guest_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> GuestI
     out
 }
 
+/// Macro used to annotate guest functions that should be exposed to the host.
+/// ```ignore
+/// #[scotch_guest::guest_function]
+/// fn add_up_list(items: &Vec<i32>) -> i32 {
+///     items.iter().sum::<i32>()
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn guest_function(_: TokenStream, input: TokenStream) -> TokenStream {
     let mut item_fn = parse_macro_input!(input as ItemFn);

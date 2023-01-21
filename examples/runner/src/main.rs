@@ -4,23 +4,31 @@ use scotch_host::{guest_functions, host_function, make_exports, make_imports, Wa
 const PLUGIN_BYTES: &[u8] = include_bytes!("../plugin.wasm");
 
 guest_functions! {
+    // The name must match with the name of the plugin function.
     pub add_up_list: fn(nums: &Vec<i32>) -> i32;
 }
 
-#[host_function]
+// `i32` is the state type. You can skip it if you are not using state.
+#[host_function(i32)]
 fn print(text: &String) {
-    println!("Wasm: {text}");
+    *STATE += 1;
+    println!("Wasm: {text}. Call count: {STATE}");
 }
 
 fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
-        .with_state(())
+        .with_state(0)
         .from_binary(PLUGIN_BYTES)?
+        // This makes `print` accessible to the plugin.
         .with_imports(make_imports!(print))
+        // This will cache `add_up_list` in plugin exports.
         .with_exports(make_exports!(add_up_list))
         .finish()?;
 
+    // If we had't call `.with_exports(make_exports!(add_up_list))` this would fail.
     let sum = plugin.function_unwrap::<add_up_list>()(&vec![1, 2, 3, 4, 5])?;
+    // You can use this to cache and get functions you hadn't cached using `.with_exports`.
+    // let sum = plugin.function_unwrap_or_cache::<add_up_list>()(&vec![1, 2, 3, 4, 5])?;
     assert_eq!(sum, 15);
 
     Ok(())

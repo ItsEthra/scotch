@@ -38,6 +38,20 @@ impl WasmPlugin {
             .downcast_ref::<H::Callback>()
     }
 
+    pub fn function_or_cache<H: GuestFunctionHandle + 'static>(&mut self) -> Option<&H::Callback> {
+        let type_id = TypeId::of::<H>();
+
+        if !self.exports.contains_key(&type_id) {
+            let callback = H::new()
+                .create(self.store.clone(), self.instance.clone())?
+                .1;
+            self.exports.insert(type_id, callback);
+            self.exports.get(&type_id).and_then(|f| f.downcast_ref())
+        } else {
+            self.exports.get(&type_id)?.downcast_ref::<H::Callback>()
+        }
+    }
+
     /// Looks up cached guest export by function handle.
     /// # Panics
     /// If function was not cached with `make_exports!`.
@@ -46,6 +60,23 @@ impl WasmPlugin {
             .get(&TypeId::of::<H>())
             .expect("Function not found")
             .downcast_ref::<H::Callback>()
+            .unwrap()
+    }
+
+    pub fn function_unwrap_or_cache<'this: 'cb, 'cb, H: GuestFunctionHandle + 'static>(
+        &'this mut self,
+    ) -> &'cb H::Callback {
+        let type_id = TypeId::of::<H>();
+
+        self.exports
+            .entry(type_id)
+            .or_insert_with(|| {
+                H::new()
+                    .create(self.store.clone(), self.instance.clone())
+                    .expect("Function not found")
+                    .1
+            })
+            .downcast_ref()
             .unwrap()
     }
 
@@ -176,7 +207,7 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
         let exports = self
             .exports
             .into_iter()
-            .flat_map(|ex| ex.create(store.clone(), instance.clone(), &instance.exports))
+            .flat_map(|ex| ex.create(store.clone(), instance.clone()))
             .collect::<HashMap<_, _>>();
 
         Ok(WasmPlugin {

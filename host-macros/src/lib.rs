@@ -268,13 +268,17 @@ impl GuestFunction {
             }
 
             unsafe impl scotch_host::GuestFunctionCreator for #handle_ident {
+                #[inline(always)]
+                fn new() -> Self {
+                    Self
+                }
+
                 fn create(
                     &self,
                     store: scotch_host::StoreRef,
                     instance: scotch_host::InstanceRef,
-                    exports: &scotch_host::Exports,
                 ) -> Option<(std::any::TypeId, scotch_host::CallbackRef)> {
-                    let typed_fn: scotch_host::TypedFunction<#dispatch_types, #dispatch_return_type> = exports
+                    let typed_fn: scotch_host::TypedFunction<#dispatch_types, #dispatch_return_type> = instance.exports
                         .get_typed_function(&*store.read(), stringify!(#export_ident))
                         .unwrap();
 

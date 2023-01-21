@@ -6,6 +6,7 @@ use bincode::{config::standard, error::EncodeError, Decode, Encode};
 use core::{alloc::Layout, marker::PhantomData, mem::size_of};
 
 #[allow(dead_code)]
+#[doc(hidden)]
 pub struct ManagedPtr<T: Encode + Decode> {
     offset: MemoryType,
     size: usize,

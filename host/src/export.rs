@@ -16,17 +16,16 @@ pub type CallbackRef = Box<dyn Any>;
 
 #[doc(hidden)]
 /// Do not implemented this trait manually.
-pub unsafe trait GuestFunctionHandle {
+pub unsafe trait GuestFunctionHandle: GuestFunctionCreator {
     type Callback;
 }
 
 #[doc(hidden)]
 /// Do not implemented this trait manually.
 pub unsafe trait GuestFunctionCreator {
-    fn create(
-        &self,
-        store: StoreRef,
-        instance: InstanceRef,
-        exports: &Exports,
-    ) -> Option<(TypeId, CallbackRef)>;
+    fn new() -> Self
+    where
+        Self: Sized;
+
+    fn create(&self, store: StoreRef, instance: InstanceRef) -> Option<(TypeId, CallbackRef)>;
 }

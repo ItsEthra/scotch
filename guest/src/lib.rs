@@ -1,7 +1,10 @@
 #![no_std]
 
+/// Pointer size. Can be `u32` or `u64`.
 #[cfg(not(feature = "mem64"))]
 pub type MemoryType = u32;
+
+/// Pointer size. Can be `u32` or `u64`.
 #[cfg(feature = "mem64")]
 pub type MemoryType = u64;
 
@@ -15,6 +18,8 @@ pub use managed::*;
 
 pub use scotch_guest_macros::*;
 
+/// Includes allocation utils for the host. Plugin will not work without it.
+/// You need to put it somewhere in your plugin crate.
 #[macro_export]
 macro_rules! include_alloc {
     () => {

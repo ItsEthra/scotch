@@ -3,6 +3,7 @@ use bincode::{config::standard, error::DecodeError, Decode, Encode};
 use core::{marker::PhantomData, slice::from_raw_parts};
 
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct EncodedPtr<T: Encode + Decode> {
     offset: MemoryType,
     _ty: PhantomData<T>,
