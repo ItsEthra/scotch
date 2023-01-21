@@ -6,7 +6,8 @@ use std::{
     sync::{Arc, Weak},
 };
 use wasmer::{
-    CompileError, Extern, FunctionEnv, Imports, Instance, InstantiationError, Module, Store,
+    CompileError, DeserializeError, Extern, FunctionEnv, Imports, Instance, InstantiationError,
+    Module, SerializeError, Store,
 };
 
 pub struct WasmEnv<S: PluginState> {
@@ -21,6 +22,7 @@ impl<T> PluginState for T where T: Any + Send + 'static + Sized {}
 pub struct WasmPlugin {
     exports: HashMap<TypeId, CallbackRef>,
     store: StoreRef,
+    module: Module,
     instance: InstanceRef,
 }
 
@@ -35,6 +37,10 @@ impl WasmPlugin {
             .get(&TypeId::of::<H>())
             .expect("Export not found");
         unsafe { transmute(export) }
+    }
+
+    pub fn serialize(&self) -> Result<Vec<u8>, SerializeError> {
+        self.module.serialize().map(|bytes| bytes.to_vec())
     }
 }
 
@@ -67,6 +73,11 @@ impl<E: PluginState> WasmPluginBuilder<E> {
 
     pub fn from_binary(mut self, wasm: &[u8]) -> Result<Self, CompileError> {
         self.module = Some(Module::from_binary(&self.store, wasm)?);
+        Ok(self)
+    }
+
+    pub unsafe fn from_serialized(mut self, data: &[u8]) -> Result<Self, DeserializeError> {
+        self.module = Some(Module::deserialize(&self.store, data)?);
         Ok(self)
     }
 
@@ -104,14 +115,11 @@ impl<E: PluginState> WasmPluginBuilder<E> {
 
     #[allow(clippy::result_large_err)]
     pub fn finish(mut self) -> Result<WasmPlugin, InstantiationError> {
-        let instance: InstanceRef = Instance::new(
-            &mut self.store,
-            self.module
-                .as_ref()
-                .expect("You need to call `from_binary` first"),
-            &self.imports.unwrap_or_default(),
-        )?
-        .into();
+        let module = self
+            .module
+            .expect("You need to call `from_binary` or `from_serialized` first");
+        let instance: InstanceRef =
+            Instance::new(&mut self.store, &module, &self.imports.unwrap_or_default())?.into();
 
         if let Some(env) = self.func_env.as_mut() {
             env.as_mut(&mut self.store).instance = Arc::downgrade(&instance);
@@ -128,6 +136,7 @@ impl<E: PluginState> WasmPluginBuilder<E> {
             store,
             exports,
             instance,
+            module,
         })
     }
 }
