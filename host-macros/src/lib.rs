@@ -279,7 +279,9 @@ impl GuestFunction {
                         out
                     }) as <Self as scotch_host::GuestFunctionHandle>::Callback;
 
-                    (std::any::TypeId::of::<#handle_ident>(), unsafe { std::mem::transmute(callback) })
+                    let any = Box::new(callback) as Box<dyn core::any::Any>;
+
+                    (std::any::TypeId::of::<#handle_ident>(), any)
                 }
             }
         }

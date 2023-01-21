@@ -2,7 +2,6 @@ use crate::{CallbackRef, GuestFunctionCreator, GuestFunctionHandle, InstanceRef,
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    mem::transmute,
     path::Path,
     sync::{Arc, Weak},
 };
@@ -33,11 +32,11 @@ impl WasmPlugin {
     }
 
     pub fn function<H: GuestFunctionHandle + 'static>(&self) -> &H::Callback {
-        let export = self
-            .exports
+        self.exports
             .get(&TypeId::of::<H>())
-            .expect("Export not found");
-        unsafe { transmute(export) }
+            .expect("Export not found")
+            .downcast_ref::<H::Callback>()
+            .unwrap()
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>, SerializeError> {

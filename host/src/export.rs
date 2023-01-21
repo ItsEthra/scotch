@@ -1,14 +1,15 @@
 use parking_lot::RwLock;
-use std::{any::TypeId, sync::Arc};
+use std::{
+    any::{Any, TypeId},
+    sync::Arc,
+};
 
 pub use wasmer::{Exports, Instance, RuntimeError, Store, TypedFunction};
 
 pub type StoreRef = Arc<RwLock<Store>>;
 pub type InstanceRef = Arc<Instance>;
 
-// Don't judge me, its fine because in `WasmPlugin` I check for type ids.
-// u128 is weird but i don't know a better way to store it.
-pub type CallbackRef = u128;
+pub type CallbackRef = Box<dyn Any>;
 
 /// # Safety
 /// Do not implemented this trait manually.
