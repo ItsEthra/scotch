@@ -94,6 +94,25 @@ impl WasmPlugin {
     pub fn serialize_to_file(&self, path: impl AsRef<Path>) -> Result<(), SerializeError> {
         self.module.serialize_to_file(path)
     }
+
+    /// Serializes plugin and compresses bytes to use with headless mode.
+    #[cfg(feature = "flate2")]
+    pub fn serialize_compress(&self) -> Result<Vec<u8>, SerializeError> {
+        use flate2::Compression;
+        use std::io::Write;
+
+        let data = self.serialize()?;
+        let mut encoder = flate2::write::GzEncoder::new(vec![], Compression::best());
+        encoder.write_all(&data[..])?;
+
+        Ok(encoder.finish()?)
+    }
+
+    #[cfg(feature = "flate2")]
+    pub fn serialize_to_file_compress(&self, path: impl AsRef<Path>) -> Result<(), SerializeError> {
+        let compressed = self.serialize_compress()?;
+        Ok(std::fs::write(path, compressed)?)
+    }
 }
 
 /// Builder for creating [`WasmPlugin`]
@@ -142,12 +161,47 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
     }
 
     /// # Safety
+    /// See [`Module::deserialize`]
+    #[cfg(feature = "flate2")]
+    pub unsafe fn from_serialized_compressed(
+        mut self,
+        compressed: &[u8],
+    ) -> Result<Self, DeserializeError> {
+        use std::io::Read;
+
+        let mut decoder = flate2::read::GzDecoder::new(compressed);
+        let mut buf = vec![];
+        decoder.read_to_end(&mut buf)?;
+
+        self.module = Some(Module::deserialize(&self.store, buf)?);
+        Ok(self)
+    }
+
+    /// # Safety
     /// See [`Module::deserialize_from_file`]
     pub unsafe fn from_serialized_file(
         mut self,
         path: impl AsRef<Path>,
     ) -> Result<Self, DeserializeError> {
         self.module = Some(Module::deserialize_from_file(&self.store, path)?);
+        Ok(self)
+    }
+
+    /// # Safety
+    /// See [`Module::deserialize`]
+    #[cfg(feature = "flate2")]
+    pub unsafe fn from_serialized_file_compressed(
+        mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<Self, DeserializeError> {
+        use std::io::Read;
+
+        let compressed = std::fs::read(path)?;
+        let mut decoder = flate2::read::GzDecoder::new(&compressed[..]);
+        let mut buf = vec![];
+        decoder.read_to_end(&mut buf)?;
+
+        self.module = Some(Module::deserialize(&self.store, buf)?);
         Ok(self)
     }
 

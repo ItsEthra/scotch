@@ -21,6 +21,7 @@ compiler = []
 
 [dependencies]
 scotch-host-macros = { path = "../host-macros" }
+flate2 = { version = "1.0", optional = true }
 parking_lot = "0.12"
 
 bincode.workspace = true

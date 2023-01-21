@@ -7,7 +7,7 @@ authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
 [dependencies]
-scotch-host = { path = "../../host" }
+scotch-host = { path = "../../host", features = ["flate2"] }
 common = { path = "../common" }
 bincode.workspace = true
 wasmer.workspace = true
