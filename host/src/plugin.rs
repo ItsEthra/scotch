@@ -76,6 +76,7 @@ impl<E: PluginState> WasmPluginBuilder<E> {
         }
     }
 
+    #[cfg(feature = "compiler")]
     pub fn from_binary(mut self, bytecode: &[u8]) -> Result<Self, CompileError> {
         self.module = Some(Module::from_binary(&self.store, bytecode)?);
         Ok(self)

@@ -6,8 +6,19 @@ license = "MIT"
 authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
+[features]
+default = ["compiler", "cranelift"]
+
+singlepass = ["wasmer/singlepass"]
+cranelift = ["wasmer/cranelift"]
+llvm = ["wasmer/llvm"]
+
+compiler = []
+
 [dependencies]
 scotch-host-macros.workspace = true
 parking_lot.workspace = true
 bincode.workspace = true
-wasmer.workspace = true
+
+[dependencies.wasmer]
+workspace = true

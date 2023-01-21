@@ -11,7 +11,7 @@ fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
         .from_binary(PLUGIN_BYTES)?
         .with_exports(make_exports!(add_up_list))
-        .with_env(0)
+        .with_env(())
         .finish()?;
 
     let sum = plugin.function::<add_up_list>()(&vec![1, 2, 3, 4, 5])?;
