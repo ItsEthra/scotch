@@ -1,11 +1,11 @@
-example-debug: build-example-plugin
-	cargo run --package runner --quiet
+example-debug: build-plugin
+	cargo run --package runner
 
-example-release: build-example-plugin
-	cargo run --package runner --quiet
+example-release: build-plugin
+	cargo run --release --package runner
 
-build-example-plugin:
-	cargo build --release --package plugin --target wasm32-unknown-unknown --quiet
+build-plugin:
+	cargo build --release --package plugin --target wasm32-unknown-unknown
 
 expand-runner:
 	cargo expand --package runner
