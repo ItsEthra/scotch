@@ -6,6 +6,10 @@ license = "MIT"
 authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
+[[bench]]
+name = "call"
+harness = false
+
 [features]
 default = ["compiler", "cranelift"]
 
@@ -21,3 +25,6 @@ parking_lot = "0.12"
 
 bincode.workspace = true
 wasmer.workspace = true
+
+[dev-dependencies]
+criterion = "0.4"

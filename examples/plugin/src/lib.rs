@@ -1,15 +1,15 @@
 scotch_guest::include_alloc!();
 
-use scotch_guest::{guest_function, host_functions};
-
-#[host_functions]
+#[cfg(not(bench))]
+#[scotch_guest::host_functions]
 extern "C" {
     fn print(val: &String);
 }
 
-#[guest_function]
+#[scotch_guest::guest_function]
 fn add_up_list(items: &Vec<i32>) -> i32 {
     // Print numbers in reverse because why not.
+    #[cfg(not(bench))]
     items
         .iter()
         .rev()
