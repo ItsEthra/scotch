@@ -1,4 +1,5 @@
-use proc_macro::TokenStream;
+use proc_macro::{TokenStream, TokenTree};
+/* ?? */
 use quote::{__private::TokenStream as TokenStream2, format_ident, quote};
 use syn::{
     parse::{Parse, ParseStream, Parser},
@@ -236,8 +237,39 @@ fn handle_from_function(mut func: ForeignItemFn) -> TokenStream2 {
         };
 
     let export_ident = &func.sig.ident;
-    // TODO: Rename
-    let handle_ident = export_ident;
+
+    // damn this is nasty
+    let rename = func
+        .attrs
+        .iter()
+        .find(|attr| {
+            attr.path.segments.len() == 1
+                && attr.path.segments.first().unwrap().ident.to_string() == "link_name"
+        })
+        .and_then(|attr| {
+            let tokens = <TokenStream as From<_>>::from(quote!(#attr))
+                .into_iter()
+                .collect::<Vec<_>>();
+            if tokens.len() != 2 {
+                return None;
+            }
+
+            if let TokenTree::Group(g) = &tokens[1] {
+                let tokens: Vec<_> = g.stream().into_iter().collect();
+                if let TokenTree::Ident(id) = &tokens[0] {
+                    if id.to_string() == "link_name" {
+                        if let TokenTree::Literal(lit) = &tokens[2] {
+                            let s = lit.to_string();
+                            return Some(format_ident!("{}", s[1..][..s.len() - 2].to_owned()));
+                        }
+                    }
+                }
+            }
+
+            None
+        });
+
+    let handle_ident = rename.unwrap_or_else(|| export_ident.clone());
     let vis = func.vis;
 
     let HandleGenerationData {
