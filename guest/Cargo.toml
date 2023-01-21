@@ -7,5 +7,5 @@ authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
 [dependencies]
-scotch-guest-macros.workspace = true
+scotch-guest-macros = { path = "../guest-macros" }
 bincode.workspace = true

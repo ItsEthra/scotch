@@ -7,10 +7,6 @@ version = "0.1.0"
 [workspace.dependencies]
 wasmer = { version = "3", default-features = false, features = ["sys", "compiler"] }
 bincode = "2.0.0-rc.2"
-parking_lot = "0.12"
-
-scotch-guest-macros = { path = "guest-macros" }
-scotch-host-macros = { path = "host-macros" }
 
 [profile.release]
 lto = true

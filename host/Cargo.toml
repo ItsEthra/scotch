@@ -16,9 +16,8 @@ llvm = ["wasmer/llvm"]
 compiler = []
 
 [dependencies]
-scotch-host-macros.workspace = true
-parking_lot.workspace = true
-bincode.workspace = true
+scotch-host-macros = { path = "../host-macros" }
+parking_lot = "0.12"
 
-[dependencies.wasmer]
-workspace = true
+bincode.workspace = true
+wasmer.workspace = true
