@@ -3,6 +3,7 @@ use std::{
     any::{Any, TypeId},
     collections::HashMap,
     mem::transmute,
+    path::Path,
     sync::{Arc, Weak},
 };
 use wasmer::{
@@ -42,6 +43,10 @@ impl WasmPlugin {
     pub fn serialize(&self) -> Result<Vec<u8>, SerializeError> {
         self.module.serialize().map(|bytes| bytes.to_vec())
     }
+
+    pub fn serialize_to_file(&self, path: impl AsRef<Path>) -> Result<(), SerializeError> {
+        self.module.serialize_to_file(path)
+    }
 }
 
 pub struct WasmPluginBuilder<E: PluginState> {
@@ -71,13 +76,21 @@ impl<E: PluginState> WasmPluginBuilder<E> {
         }
     }
 
-    pub fn from_binary(mut self, wasm: &[u8]) -> Result<Self, CompileError> {
-        self.module = Some(Module::from_binary(&self.store, wasm)?);
+    pub fn from_binary(mut self, bytecode: &[u8]) -> Result<Self, CompileError> {
+        self.module = Some(Module::from_binary(&self.store, bytecode)?);
         Ok(self)
     }
 
     pub unsafe fn from_serialized(mut self, data: &[u8]) -> Result<Self, DeserializeError> {
         self.module = Some(Module::deserialize(&self.store, data)?);
+        Ok(self)
+    }
+
+    pub unsafe fn from_serialized_file(
+        mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<Self, DeserializeError> {
+        self.module = Some(Module::deserialize_from_file(&self.store, path)?);
         Ok(self)
     }
 
