@@ -87,6 +87,13 @@ fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInp
     out
 }
 
+/// Macro used to annotate host function that can be exposed to guest.
+/// ```ignore
+/// #[host_function]
+/// fn print(text: &String) {
+///     println!("Wasm: {text}");
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     let env_type = if args.is_empty() {
@@ -119,7 +126,7 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     let out = quote! {
         #vis fn #ident(mut __env: #env_type, #args) #output {
             let __instance = __env.data().instance.upgrade().unwrap();
-            let __view = __instance.exports.get_memory("memory").unwrap().view(&__env);
+            let __view = __instance.exports.get_memory("memory").expect("Memory is missing").view(&__env);
 
             #[allow(non_snake_case)]
             let STATE = &mut __env.data_mut().state;
@@ -194,10 +201,10 @@ fn prepare_handle_gen_data(args: impl Iterator<Item = BareFnArg>) -> HandleGener
         match translate_type(arg.ty.clone(), WrapMode::Encoded) {
             TypeTranslation::Wrapped(new) => {
                 let pre = parse_quote! {
-                    let #name: #new = scotch_host::EncodedPtr::new_in(#name, &mut *store.write(), &*instance).unwrap();
+                    let #name: #new = scotch_host::EncodedPtr::new_in(#name, &mut *store.write(), &*instance).expect("Alloc failed");
                 };
                 let post = parse_quote! {
-                    #name.free_in(&mut *store.write(), &*instance);
+                    #name.free_in(&mut *store.write(), &*instance).expect("Free failed");
                 };
 
                 out.pre_dispatch.push(pre);
@@ -288,6 +295,12 @@ impl GuestFunction {
     }
 }
 
+/// Macro that is used to create handles for guest functions.
+/// ```ignore
+/// guest_functions! {
+///     pub add_up_list: fn(nums: &Vec<i32>) -> i32;
+/// }
+/// ```
 #[proc_macro]
 pub fn guest_functions(input: TokenStream) -> TokenStream {
     let parser = Punctuated::<GuestFunction, Token![;]>::parse_terminated;
@@ -307,6 +320,17 @@ pub fn guest_functions(input: TokenStream) -> TokenStream {
     output.into()
 }
 
+/// Macro to create guest imports for `WasmPluginBuilder`.
+/// ```ignore
+/// #[host_function]
+/// fn print(text: &String) {
+///     println!("Wasm: {text}");
+/// }
+///
+/// let plugin = WasmPluginBuilder::new()
+///     .with_state(())
+///     .with_imports(make_imports!(print)));
+/// ```
 #[proc_macro]
 pub fn make_imports(input: TokenStream) -> TokenStream {
     let parser = Punctuated::<Path, Token![,]>::parse_terminated;
@@ -333,6 +357,16 @@ pub fn make_imports(input: TokenStream) -> TokenStream {
     out.into()
 }
 
+/// Macro to create guest exports for `WasmPluginBuilder`.
+/// ```ignore
+/// guest_functions! {
+///     pub add_up_list: fn(nums: &Vec<i32>) -> i32;
+/// }
+///
+/// let plugin = WasmPluginBuilder::new()
+///     .with_state(())
+///     .with_exports(make_exports!(add_up_list));
+/// ```
 #[proc_macro]
 pub fn make_exports(input: TokenStream) -> TokenStream {
     let parser = Punctuated::<Path, Token![,]>::parse_terminated;

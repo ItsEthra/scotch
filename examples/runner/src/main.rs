@@ -14,13 +14,13 @@ fn print(text: &String) {
 
 fn main() -> Result<()> {
     let plugin = WasmPlugin::builder()
-        .with_env(())
+        .with_state(())
         .from_binary(PLUGIN_BYTES)?
         .with_imports(make_imports!(print))
         .with_exports(make_exports!(add_up_list))
         .finish()?;
 
-    let sum = plugin.function::<add_up_list>()(&vec![1, 2, 3, 4, 5])?;
+    let sum = plugin.function_unwrap::<add_up_list>()(&vec![1, 2, 3, 4, 5])?;
     assert_eq!(sum, 15);
 
     Ok(())

@@ -10,14 +10,13 @@ use wasmer::{
     Module, SerializeError, Store,
 };
 
-pub struct WasmEnv<S: PluginState> {
+#[doc(hidden)]
+pub struct WasmEnv<S: Any + Send + Sized + 'static> {
     pub instance: Weak<Instance>,
     pub state: S,
 }
 
-pub trait PluginState: Any + Send + 'static + Sized {}
-impl<T> PluginState for T where T: Any + Send + 'static + Sized {}
-
+/// An instantiated plugin with cached exports.
 #[allow(dead_code)]
 pub struct WasmPlugin {
     exports: HashMap<TypeId, CallbackRef>,
@@ -27,28 +26,42 @@ pub struct WasmPlugin {
 }
 
 impl WasmPlugin {
-    pub fn builder<E: PluginState>() -> WasmPluginBuilder<E> {
+    /// Creates a builder to create a new WasmPlugin.
+    pub fn builder<E: Any + Send + Sized + 'static>() -> WasmPluginBuilder<E> {
         WasmPluginBuilder::new()
     }
 
-    pub fn function<H: GuestFunctionHandle + 'static>(&self) -> &H::Callback {
+    /// Looks up cached guest export by function handle.
+    pub fn function<H: GuestFunctionHandle + 'static>(&self) -> Option<&H::Callback> {
+        self.exports
+            .get(&TypeId::of::<H>())?
+            .downcast_ref::<H::Callback>()
+    }
+
+    /// Looks up cached guest export by function handle.
+    /// # Panics
+    /// If function was not cached with `make_exports!`.
+    pub fn function_unwrap<H: GuestFunctionHandle + 'static>(&self) -> &H::Callback {
         self.exports
             .get(&TypeId::of::<H>())
-            .expect("Export not found")
+            .expect("Function not found")
             .downcast_ref::<H::Callback>()
             .unwrap()
     }
 
+    /// Serializes plugin into bytes to use with headless mode.
     pub fn serialize(&self) -> Result<Vec<u8>, SerializeError> {
         self.module.serialize().map(|bytes| bytes.to_vec())
     }
 
+    /// Serializes plugin into bytes to use with headless mode and writes them to file.
     pub fn serialize_to_file(&self, path: impl AsRef<Path>) -> Result<(), SerializeError> {
         self.module.serialize_to_file(path)
     }
 }
 
-pub struct WasmPluginBuilder<E: PluginState> {
+/// Builder for creating [`WasmPlugin`]
+pub struct WasmPluginBuilder<E: Any + Send + Sized + 'static> {
     store: Store,
     module: Option<Module>,
     imports: Option<Imports>,
@@ -56,7 +69,8 @@ pub struct WasmPluginBuilder<E: PluginState> {
     func_env: Option<FunctionEnv<WasmEnv<E>>>,
 }
 
-impl<E: PluginState> WasmPluginBuilder<E> {
+impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
+    /// Creates new [`WasmPluginBuilder`]
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -68,6 +82,7 @@ impl<E: PluginState> WasmPluginBuilder<E> {
         }
     }
 
+    /// Creates new [`WasmPluginBuilder`] and overrides default store with custom.
     pub fn new_with_store(store: Store) -> Self {
         Self {
             store,
@@ -75,17 +90,23 @@ impl<E: PluginState> WasmPluginBuilder<E> {
         }
     }
 
+    /// Compiles bytecode with selected compiler. To change the compile use feature flags.
+    /// Default compiler is `cranelift`.
     #[cfg(feature = "compiler")]
     pub fn from_binary(mut self, bytecode: &[u8]) -> Result<Self, CompileError> {
         self.module = Some(Module::from_binary(&self.store, bytecode)?);
         Ok(self)
     }
 
+    /// # Safety
+    /// See [`Module::deserialize`]
     pub unsafe fn from_serialized(mut self, data: &[u8]) -> Result<Self, DeserializeError> {
         self.module = Some(Module::deserialize(&self.store, data)?);
         Ok(self)
     }
 
+    /// # Safety
+    /// See [`Module::deserialize_from_file`]
     pub unsafe fn from_serialized_file(
         mut self,
         path: impl AsRef<Path>,
@@ -94,30 +115,42 @@ impl<E: PluginState> WasmPluginBuilder<E> {
         Ok(self)
     }
 
-    pub fn with_env(mut self, env: E) -> Self {
+    /// Creates a state that host function will have mutable access to.
+    /// You *HAVE* to create the state. If you do not need it simply pass `()`.
+    pub fn with_state(mut self, state: S) -> Self {
+        // This should help avoid questionable bugs in `with_imports`.
+        assert!(
+            self.func_env.is_none(),
+            "You can call `with_state` only once"
+        );
+
         self.func_env = Some(FunctionEnv::new(
             &mut self.store,
             WasmEnv {
                 instance: Weak::new(),
-                state: env,
+                state,
             },
         ));
         self
     }
 
+    /// Creates imports i.e. host functions that guest imports.
+    /// use `make_imports!` to create the closure.
     pub fn with_imports(
         mut self,
-        imports: impl FnOnce(&mut Store, &FunctionEnv<WasmEnv<E>>) -> Imports,
+        imports: impl FnOnce(&mut Store, &FunctionEnv<WasmEnv<S>>) -> Imports,
     ) -> Self {
         self.imports = Some(imports(
             &mut self.store,
             self.func_env
                 .as_ref()
-                .expect("You need to call `with_env` first"),
+                .expect("You need to call `with_state` first"),
         ));
         self
     }
 
+    /// Updates exports i.e. guest functions that host imports.
+    /// use `make_exports!` to create the iterator.
     pub fn with_exports(
         mut self,
         exports: impl IntoIterator<Item = Box<dyn GuestFunctionCreator>>,
@@ -126,6 +159,7 @@ impl<E: PluginState> WasmPluginBuilder<E> {
         self
     }
 
+    /// Finishes building a `WasmPlugin`.
     #[allow(clippy::result_large_err)]
     pub fn finish(mut self) -> Result<WasmPlugin, InstantiationError> {
         let module = self
@@ -154,14 +188,17 @@ impl<E: PluginState> WasmPluginBuilder<E> {
     }
 }
 
-impl<E: PluginState> Default for WasmPluginBuilder<E> {
+impl<E: Any + Send + Sized + 'static> Default for WasmPluginBuilder<E> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[doc(hidden)]
 pub use wasmer::{Function, FunctionEnvMut};
+
+#[doc(hidden)]
 pub fn create_imports_from_functions<const N: usize>(
     items: [(&'static str, Function); N],
 ) -> Imports {

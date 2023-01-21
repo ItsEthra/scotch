@@ -1,11 +1,12 @@
-use crate::PrefixType;
-use bincode::{config::standard, error::DecodeError, Decode, Encode};
+use crate::{PrefixType, ScotchHostError};
+use bincode::{config::standard, Decode, Encode};
 use std::{borrow::Cow, marker::PhantomData, mem::size_of};
 use wasmer::{
-    AsStoreMut, FromToNativeWasmType, Instance, Memory32, MemoryAccessError, MemorySize,
-    MemoryView, NativeWasmTypeInto,
+    AsStoreMut, FromToNativeWasmType, Instance, Memory32, MemorySize, MemoryView,
+    NativeWasmTypeInto,
 };
 
+#[doc(hidden)]
 pub struct EncodedPtr<T: Encode + Decode, M: MemorySize = Memory32> {
     pub(crate) offset: M::Offset,
     size: usize,
@@ -17,7 +18,7 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
         value: &T,
         store: &mut impl AsStoreMut,
         instance: &Instance,
-    ) -> Result<Self, MemoryAccessError> {
+    ) -> Result<Self, ScotchHostError> {
         let mut buf = [0u8; 256];
 
         // First try encoding to the stack if the object is small,
@@ -26,13 +27,13 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
             if let Ok(size) = bincode::encode_into_slice(value, &mut buf[..], standard()) {
                 Cow::Borrowed(&buf[..size])
             } else {
-                Cow::Owned(bincode::encode_to_vec(value, standard()).unwrap())
+                Cow::Owned(bincode::encode_to_vec(value, standard())?)
             };
 
         let func = instance
             .exports
             .get_function("__scotch_alloc")
-            .expect("Missing __scotch_alloc wrapper");
+            .map_err(ScotchHostError::AllocMissing)?;
         let out = &func
             .call(
                 store,
@@ -41,7 +42,7 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
                     1i32.into(),
                 ],
             )
-            .expect("Alloc guest call failed")[0];
+            .map_err(ScotchHostError::AllocFailed)?[0];
 
         #[cfg(feature = "mem64")]
         let ptr = out.unwrap_i64() as u64;
@@ -51,7 +52,7 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
         let view = instance
             .exports
             .get_memory("memory")
-            .expect("Memory is missing")
+            .map_err(ScotchHostError::MemoryMissing)?
             .view(store);
 
         view.write(ptr, &(buf.len() as PrefixType).to_le_bytes())?;
@@ -68,13 +69,17 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
         }
     }
 
-    pub fn free_in(self, mut store: &mut impl AsStoreMut, instance: &Instance) {
+    pub fn free_in(
+        self,
+        mut store: &mut impl AsStoreMut,
+        instance: &Instance,
+    ) -> Result<(), ScotchHostError> {
         let offset: u64 = self.offset.into();
 
         let func = instance
             .exports
             .get_function("__scotch_free")
-            .expect("Missing __scotch_free wrapper");
+            .map_err(ScotchHostError::FreeMissing)?;
         func.call(
             &mut store,
             &[
@@ -83,23 +88,22 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
                 1i32.into(),
             ],
         )
-        .expect("Free guest call failed");
+        .map(|_| ())
+        .map_err(ScotchHostError::FreeFailed)
     }
 
-    pub fn read(&self, view: &MemoryView) -> Result<T, DecodeError> {
+    pub fn read(&self, view: &MemoryView) -> Result<T, ScotchHostError> {
         let offset: u64 = self.offset.into();
         let mut size = [0, 0];
 
-        // TODO: Handle somehow
-        _ = view.read(offset, &mut size);
+        view.read(offset, &mut size)?;
 
         let len = u16::from_le_bytes(size) as usize;
         let mut data = vec![0; len];
 
-        // TODO: Handle somehow
-        _ = view.read(offset + 2, &mut data[..]);
+        view.read(offset + 2, &mut data[..])?;
 
-        bincode::decode_from_slice(&data[..], standard()).map(|(val, _)| val)
+        Ok(bincode::decode_from_slice(&data[..], standard()).map(|(val, _)| val)?)
     }
 }
 
