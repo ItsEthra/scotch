@@ -11,7 +11,7 @@ build-plugin-bench:
 	RUSTFLAGS="--cfg bench" cargo build --release --package plugin --target wasm32-unknown-unknown
 
 bench: build-plugin-bench
-	cargo bench --package host
+	cargo bench --package scotch-host
 
 expand-runner:
 	cargo expand --package runner

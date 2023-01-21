@@ -1,9 +1,9 @@
 #![no_std]
 
 #[cfg(not(feature = "mem64"))]
-type MemoryType = u32;
+pub type MemoryType = u32;
 #[cfg(feature = "mem64")]
-type MemoryType = u64;
+pub type MemoryType = u64;
 
 type PrefixType = u16;
 

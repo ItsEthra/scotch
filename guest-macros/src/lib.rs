@@ -1,8 +1,8 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, parse_quote, FnArg, ForeignItem, ItemFn, ItemForeignMod, Pat, Signature,
-    Stmt, Type, TypeReference,
+    parse_macro_input, parse_quote, Expr, FnArg, ForeignItem, ItemFn, ItemForeignMod, Pat,
+    Signature, Stmt, Type, TypeReference,
 };
 
 fn is_atom_type(ty: &str) -> bool {
@@ -23,7 +23,7 @@ impl WrapMode {
     fn wrap(self, ty: Type) -> Type {
         match self {
             WrapMode::Encoded => parse_quote!(scotch_guest::EncodedPtr<#ty>),
-            WrapMode::Managed => parse_quote!(scotch_guest::ManagedPtr<#ty>),
+            WrapMode::Managed => parse_quote!(scotch_guest::MemoryType),
         }
     }
 }
@@ -53,7 +53,9 @@ fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
 
 #[derive(Default)]
 struct HostInputTranslation {
+    call_args: Vec<Expr>,
     prelude: Vec<Stmt>,
+    epilogue: Vec<Stmt>,
 }
 
 fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInputTranslation {
@@ -80,6 +82,10 @@ fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInp
             *ty = Box::new(new);
             out.prelude
                 .push(parse_quote!(let #name = scotch_guest::ManagedPtr::new(#name).unwrap();));
+            out.epilogue.push(parse_quote!(#name.free();));
+            out.call_args.push(parse_quote!(#name.offset()));
+        } else {
+            out.call_args.push(parse_quote!(#name));
         }
     });
 
@@ -112,19 +118,11 @@ pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
             let fake_id = format_ident!("_host_{}", sig.ident);
             sig.ident = fake_id.clone();
 
-            let HostInputTranslation { prelude } = translate_host_inputs(sig.inputs.iter_mut());
-
-            let arg_names = sig
-                .inputs
-                .iter()
-                .map(|arg| {
-                    if let FnArg::Typed(arg) = arg {
-                        arg
-                    } else {
-                        panic!("self is not allowed in host function")
-                    }
-                })
-                .map(|arg| &arg.pat);
+            let HostInputTranslation {
+                prelude,
+                epilogue,
+                call_args,
+            } = translate_host_inputs(sig.inputs.iter_mut());
 
             quote! {
                 fn #ident(#inputs) #output {
@@ -135,7 +133,10 @@ pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
 
                     unsafe {
                         #(#prelude)*
-                        #fake_id(#(#arg_names),*)
+                        let __out = #fake_id(#(#call_args),*);
+                        #(#epilogue)*
+
+                        __out
                     }
                 }
             }

@@ -5,14 +5,19 @@ use alloc::borrow::Cow;
 use bincode::{config::standard, error::EncodeError, Decode, Encode};
 use core::{alloc::Layout, marker::PhantomData, mem::size_of};
 
-#[repr(transparent)]
 #[allow(dead_code)]
 pub struct ManagedPtr<T: Encode + Decode> {
     offset: MemoryType,
+    size: usize,
     _ty: PhantomData<T>,
 }
 
 impl<T: Encode + Decode> ManagedPtr<T> {
+    #[inline(always)]
+    pub fn offset(&self) -> MemoryType {
+        self.offset
+    }
+
     pub fn new(value: &T) -> Result<Self, EncodeError> {
         extern crate alloc;
 
@@ -35,10 +40,18 @@ impl<T: Encode + Decode> ManagedPtr<T> {
 
             Ok(Self {
                 offset: ptr as MemoryType,
+                size: buf.len(),
                 _ty: PhantomData,
             })
         }
     }
 
-    // TODO: Free to avoid leaking memory
+    pub fn free(self) {
+        unsafe {
+            alloc::alloc::dealloc(
+                self.offset as _,
+                Layout::from_size_align(self.size, 1).unwrap(),
+            );
+        }
+    }
 }

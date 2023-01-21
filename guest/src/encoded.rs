@@ -5,7 +5,7 @@ use core::{marker::PhantomData, slice::from_raw_parts};
 #[repr(transparent)]
 pub struct EncodedPtr<T: Encode + Decode> {
     offset: MemoryType,
-    _data: PhantomData<T>,
+    _ty: PhantomData<T>,
 }
 
 impl<T: Encode + Decode> EncodedPtr<T> {
