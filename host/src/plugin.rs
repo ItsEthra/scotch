@@ -176,7 +176,7 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
         let exports = self
             .exports
             .into_iter()
-            .map(|ex| ex.create(store.clone(), instance.clone(), &instance.exports))
+            .flat_map(|ex| ex.create(store.clone(), instance.clone(), &instance.exports))
             .collect::<HashMap<_, _>>();
 
         Ok(WasmPlugin {

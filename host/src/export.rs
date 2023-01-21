@@ -28,5 +28,5 @@ pub unsafe trait GuestFunctionCreator {
         store: StoreRef,
         instance: InstanceRef,
         exports: &Exports,
-    ) -> (TypeId, CallbackRef);
+    ) -> Option<(TypeId, CallbackRef)>;
 }

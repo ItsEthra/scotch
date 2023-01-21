@@ -273,7 +273,7 @@ impl GuestFunction {
                     store: scotch_host::StoreRef,
                     instance: scotch_host::InstanceRef,
                     exports: &scotch_host::Exports,
-                ) -> (std::any::TypeId, scotch_host::CallbackRef) {
+                ) -> Option<(std::any::TypeId, scotch_host::CallbackRef)> {
                     let typed_fn: scotch_host::TypedFunction<#dispatch_types, #dispatch_return_type> = exports
                         .get_typed_function(&*store.read(), stringify!(#export_ident))
                         .unwrap();
@@ -288,7 +288,7 @@ impl GuestFunction {
 
                     let any = Box::new(callback) as Box<dyn core::any::Any>;
 
-                    (std::any::TypeId::of::<#handle_ident>(), any)
+                    Some((std::any::TypeId::of::<#handle_ident>(), any))
                 }
             }
         }
