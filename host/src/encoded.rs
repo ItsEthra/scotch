@@ -1,6 +1,6 @@
 use crate::PrefixType;
 use bincode::{config::standard, error::DecodeError, Decode, Encode};
-use std::{marker::PhantomData, mem::size_of};
+use std::{borrow::Cow, marker::PhantomData, mem::size_of};
 use wasmer::{
     AsStoreMut, FromToNativeWasmType, Instance, Memory32, MemoryAccessError, MemorySize,
     MemoryView, NativeWasmTypeInto,
@@ -22,46 +22,49 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
 
         // First try encoding to the stack if the object is small,
         // otherwise encode to the heap.
-        if let Ok(size) = bincode::encode_into_slice(value, &mut buf[..], standard()) {
-            let func = instance
-                .exports
-                .get_function("__scotch_alloc")
-                .expect("Missing __scotch_alloc wrapper");
-            let out = &func
-                .call(
-                    store,
-                    &[
-                        ((size + size_of::<PrefixType>()) as i32).into(),
-                        1i32.into(),
-                    ],
-                )
-                .expect("Alloc guest call failed")[0];
-
-            #[cfg(feature = "mem64")]
-            let ptr = out.unwrap_i64() as u64;
-            #[cfg(not(feature = "mem64"))]
-            let ptr = out.unwrap_i32() as u64;
-
-            let view = instance
-                .exports
-                .get_memory("memory")
-                .expect("Memory is missing")
-                .view(store);
-
-            view.write(ptr, &(size as PrefixType).to_le_bytes())?;
-            view.write(ptr + size_of::<PrefixType>() as u64, &buf[..size])?;
-
-            if let Ok(offset) = ptr.try_into() {
-                Ok(EncodedPtr {
-                    offset,
-                    size,
-                    _ty: PhantomData,
-                })
+        let buf: Cow<[u8]> =
+            if let Ok(size) = bincode::encode_into_slice(value, &mut buf[..], standard()) {
+                Cow::Borrowed(&buf[..size])
             } else {
-                unimplemented!()
-            }
+                Cow::Owned(bincode::encode_to_vec(value, standard()).unwrap())
+            };
+
+        let func = instance
+            .exports
+            .get_function("__scotch_alloc")
+            .expect("Missing __scotch_alloc wrapper");
+        let out = &func
+            .call(
+                store,
+                &[
+                    ((buf.len() + size_of::<PrefixType>()) as i32).into(),
+                    1i32.into(),
+                ],
+            )
+            .expect("Alloc guest call failed")[0];
+
+        #[cfg(feature = "mem64")]
+        let ptr = out.unwrap_i64() as u64;
+        #[cfg(not(feature = "mem64"))]
+        let ptr = out.unwrap_i32() as u64;
+
+        let view = instance
+            .exports
+            .get_memory("memory")
+            .expect("Memory is missing")
+            .view(store);
+
+        view.write(ptr, &(buf.len() as PrefixType).to_le_bytes())?;
+        view.write(ptr + size_of::<PrefixType>() as u64, &buf[..])?;
+
+        if let Ok(offset) = ptr.try_into() {
+            Ok(EncodedPtr {
+                offset,
+                size: buf.len(),
+                _ty: PhantomData,
+            })
         } else {
-            todo!()
+            unimplemented!()
         }
     }
 
