@@ -4,8 +4,8 @@ use syn::{
     parse::{Parse, ParseStream, Parser},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    BareFnArg, FnArg, Ident, ItemFn, Pat, Path, ReturnType, Stmt, Token, Type, TypeBareFn,
-    TypeReference, Visibility,
+    BareFnArg, FnArg, ForeignItem, ForeignItemFn, Ident, ItemFn, ItemForeignMod, Pat, PatType,
+    Path, ReturnType, Stmt, Token, Type, TypeBareFn, TypeReference, Visibility,
 };
 
 fn is_atom_type(ty: &str) -> bool {
@@ -186,19 +186,20 @@ struct HandleGenerationData {
     post_dispatch: Vec<Stmt>,
 }
 
-fn prepare_handle_gen_data(args: impl Iterator<Item = BareFnArg>) -> HandleGenerationData {
+fn prepare_handle_gen_data(args: impl Iterator<Item = PatType>) -> HandleGenerationData {
     let mut out = HandleGenerationData::default();
 
-    args.into_iter().enumerate().for_each(|(i, arg)| {
-        out.callback_types.push(arg.ty.clone());
-        let name = arg
-            .name
-            .map(|(i, _)| i)
-            .unwrap_or_else(|| format_ident!("arg{i}"));
+    args.into_iter().for_each(|arg| {
+        out.callback_types.push(arg.ty.as_ref().clone());
+        let name = if let Pat::Ident(name) = *arg.pat {
+            name.ident
+        } else {
+            panic!("Invalid function parameter");
+        };
         let ty = &arg.ty;
         out.callback_args.push(parse_quote!(#name: #ty));
 
-        match translate_type(arg.ty.clone(), WrapMode::Encoded) {
+        match translate_type(arg.ty.as_ref().clone(), WrapMode::Encoded) {
             TypeTranslation::Wrapped(new) => {
                 let pre = parse_quote! {
                     let #name: #new = scotch_host::EncodedPtr::new_in(#name, &mut *store.write(), &*instance).expect("Alloc failed");
@@ -211,89 +212,94 @@ fn prepare_handle_gen_data(args: impl Iterator<Item = BareFnArg>) -> HandleGener
                 out.post_dispatch.push(post);
                 out.dispatch_types.push(new);
             }
-            TypeTranslation::Original => out.dispatch_types.push(arg.ty),
+            TypeTranslation::Original => out.dispatch_types.push(*arg.ty),
         }
     });
 
     out
 }
 
-impl GuestFunction {
-    fn into_handle(mut self) -> TokenStream2 {
-        let (callback_return_type, dispatch_return_type): (Type, Type) =
-            if let ReturnType::Type(_, ref mut ty) = self.ty.output {
-                let Type::Path(ty) = ty.as_mut() else { panic!("Bad return type"); };
+fn handle_from_function(mut func: ForeignItemFn) -> TokenStream2 {
+    let (callback_return_type, dispatch_return_type): (Type, Type) =
+        if let ReturnType::Type(_, ref mut ty) = func.sig.output {
+            let Type::Path(ty) = ty.as_mut() else { panic!("Bad return type"); };
 
-                (
-                    parse_quote!(Result<#ty, scotch_host::RuntimeError>),
-                    ty.clone().into(),
-                )
-            } else {
-                (
-                    parse_quote!(Result<(), scotch_host::RuntimeError>),
-                    parse_quote!(()),
-                )
-            };
-
-        let export_ident = &self.name;
-        let handle_ident = self.rename.unwrap_or_else(|| self.name.clone());
-        let vis = self.vis;
-
-        let HandleGenerationData {
-            callback_types,
-            callback_args,
-            pre_dispatch,
-            post_dispatch,
-            dispatch_types,
-        } = prepare_handle_gen_data(self.ty.inputs.clone().into_iter());
-
-        let dispatch_types = if dispatch_types.len() == 1 {
-            quote!(#(#dispatch_types)*)
+            (
+                parse_quote!(Result<#ty, scotch_host::RuntimeError>),
+                ty.clone().into(),
+            )
         } else {
-            quote!((#(#dispatch_types),*))
+            (
+                parse_quote!(Result<(), scotch_host::RuntimeError>),
+                parse_quote!(()),
+            )
         };
 
-        let arg_names = callback_args.iter().enumerate().map(|(i, arg)| {
-            arg.name
-                .clone()
-                .map(|(i, _)| i)
-                .unwrap_or_else(|| format_ident!("arg{i}"))
-        });
+    let export_ident = &func.sig.ident;
+    // TODO: Rename
+    let handle_ident = export_ident;
+    let vis = func.vis;
 
-        quote! {
-            #[allow(non_camel_case_types)]
-            #vis struct #handle_ident;
-            unsafe impl scotch_host::GuestFunctionHandle for #handle_ident {
-                type Callback = Box<dyn Fn(#(#callback_types),*) -> #callback_return_type>;
+    let HandleGenerationData {
+        callback_types,
+        callback_args,
+        pre_dispatch,
+        post_dispatch,
+        dispatch_types,
+    } = prepare_handle_gen_data(func.sig.inputs.clone().into_iter().map(|arg| {
+        if let FnArg::Typed(arg) = arg {
+            arg
+        } else {
+            panic!("self is not supported in guest functions.")
+        }
+    }));
+
+    let dispatch_types = if dispatch_types.len() == 1 {
+        quote!(#(#dispatch_types)*)
+    } else {
+        quote!((#(#dispatch_types),*))
+    };
+
+    let arg_names = callback_args.iter().enumerate().map(|(i, arg)| {
+        arg.name
+            .clone()
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| format_ident!("arg{i}"))
+    });
+
+    quote! {
+        #[allow(non_camel_case_types)]
+        #vis struct #handle_ident;
+        unsafe impl scotch_host::GuestFunctionHandle for #handle_ident {
+            type Callback = Box<dyn Fn(#(#callback_types),*) -> #callback_return_type>;
+        }
+
+        unsafe impl scotch_host::GuestFunctionCreator for #handle_ident {
+            #[inline(always)]
+            fn new() -> Self {
+                Self
             }
 
-            unsafe impl scotch_host::GuestFunctionCreator for #handle_ident {
-                #[inline(always)]
-                fn new() -> Self {
-                    Self
-                }
+            fn create(
+                &self,
+                store: scotch_host::StoreRef,
+                instance: scotch_host::InstanceRef,
+            ) -> Option<(std::any::TypeId, scotch_host::CallbackRef)> {
+                let typed_fn: scotch_host::TypedFunction<#dispatch_types, #dispatch_return_type> = instance.exports
+                    .get_typed_function(&*store.read(), stringify!(#export_ident))
+                    .unwrap();
 
-                fn create(
-                    &self,
-                    store: scotch_host::StoreRef,
-                    instance: scotch_host::InstanceRef,
-                ) -> Option<(std::any::TypeId, scotch_host::CallbackRef)> {
-                    let typed_fn: scotch_host::TypedFunction<#dispatch_types, #dispatch_return_type> = instance.exports
-                        .get_typed_function(&*store.read(), stringify!(#export_ident))
-                        .unwrap();
+                let callback = Box::new(move |#(#callback_args),*| {
+                    #(#pre_dispatch)*
+                    let out = typed_fn.call(&mut *store.write(), #(#arg_names),*);
+                    #(#post_dispatch)*
 
-                    let callback = Box::new(move |#(#callback_args),*| {
-                        #(#pre_dispatch)*
-                        let out = typed_fn.call(&mut *store.write(), #(#arg_names),*);
-                        #(#post_dispatch)*
+                    out
+                }) as <Self as scotch_host::GuestFunctionHandle>::Callback;
 
-                        out
-                    }) as <Self as scotch_host::GuestFunctionHandle>::Callback;
+                let any = Box::new(callback) as Box<dyn core::any::Any>;
 
-                    let any = Box::new(callback) as Box<dyn core::any::Any>;
-
-                    Some((std::any::TypeId::of::<#handle_ident>(), any))
-                }
+                Some((std::any::TypeId::of::<#handle_ident>(), any))
             }
         }
     }
@@ -305,17 +311,18 @@ impl GuestFunction {
 ///     pub add_up_list: fn(nums: &Vec<i32>) -> i32;
 /// }
 /// ```
-#[proc_macro]
-pub fn guest_functions(input: TokenStream) -> TokenStream {
-    let parser = Punctuated::<GuestFunction, Token![;]>::parse_terminated;
-    let guest_fns = parser
-        .parse(input)
-        .expect("Invalid guest_functions invokation");
-
-    let handles = guest_fns
+#[proc_macro_attribute]
+pub fn guest_functions(_: TokenStream, input: TokenStream) -> TokenStream {
+    let handles = parse_macro_input!(input as ItemForeignMod)
+        .items
         .into_iter()
-        .map(GuestFunction::into_handle)
-        .collect::<Vec<_>>();
+        .map(|item| {
+            if let ForeignItem::Fn(func) = item {
+                handle_from_function(func)
+            } else {
+                panic!("Only functions are supported")
+            }
+        });
 
     let output = quote! {
         #(#handles)*

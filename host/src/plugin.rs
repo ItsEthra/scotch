@@ -1,7 +1,7 @@
 use crate::{CallbackRef, GuestFunctionCreator, GuestFunctionHandle, InstanceRef, StoreRef};
 use std::{
     any::{Any, TypeId},
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     path::Path,
     sync::{Arc, Weak},
 };
@@ -38,18 +38,19 @@ impl WasmPlugin {
             .downcast_ref::<H::Callback>()
     }
 
+    /// Looks up cached guest export by function handle.
+    /// If no matches are found tries to resolve export from wasm instance and cache the result.
     pub fn function_or_cache<H: GuestFunctionHandle + 'static>(&mut self) -> Option<&H::Callback> {
         let type_id = TypeId::of::<H>();
 
-        if !self.exports.contains_key(&type_id) {
+        if let Entry::Vacant(e) = self.exports.entry(type_id) {
             let callback = H::new()
                 .create(self.store.clone(), self.instance.clone())?
                 .1;
-            self.exports.insert(type_id, callback);
-            self.exports.get(&type_id).and_then(|f| f.downcast_ref())
-        } else {
-            self.exports.get(&type_id)?.downcast_ref::<H::Callback>()
+            e.insert(callback);
         }
+
+        self.exports.get(&type_id).and_then(|f| f.downcast_ref())
     }
 
     /// Looks up cached guest export by function handle.
@@ -63,6 +64,10 @@ impl WasmPlugin {
             .unwrap()
     }
 
+    /// Looks up cached guest export by function handle.
+    /// If no matches are found tries to resolve export from wasm instance and cache the result.
+    /// # Panics
+    /// If failed to find function in exports and it is missing in wasm instance.
     pub fn function_unwrap_or_cache<'this: 'cb, 'cb, H: GuestFunctionHandle + 'static>(
         &'this mut self,
     ) -> &'cb H::Callback {

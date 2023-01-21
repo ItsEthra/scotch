@@ -3,9 +3,10 @@ use scotch_host::{guest_functions, host_function, make_exports, make_imports, Wa
 
 const PLUGIN_BYTES: &[u8] = include_bytes!("../plugin.wasm");
 
-guest_functions! {
+#[guest_functions]
+extern "C" {
     // The name must match with the name of the plugin function.
-    pub add_up_list: fn(nums: &Vec<i32>) -> i32;
+    pub fn add_up_list(nums: &Vec<i32>) -> i32;
 }
 
 // `i32` is the state type. You can skip it if you are not using state.
@@ -22,6 +23,7 @@ fn main() -> Result<()> {
         // This makes `print` accessible to the plugin.
         .with_imports(make_imports!(print))
         // This will cache `add_up_list` in plugin exports.
+        // Not necessery but preferred.
         .with_exports(make_exports!(add_up_list))
         .finish()?;
 
