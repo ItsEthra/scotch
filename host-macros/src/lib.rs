@@ -37,7 +37,7 @@ enum TypeTranslation {
     Wrapped(Type),
 }
 
-fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
+fn translate_type(ty: Type, mode: WrapMode, allow_owned: bool) -> TypeTranslation {
     match ty {
         Type::Path(path) if is_atom_type(&path.path.segments.last().unwrap().ident.to_string()) => {
             TypeTranslation::Original
@@ -49,6 +49,7 @@ fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
             ..
         }) => TypeTranslation::Wrapped(mode.wrap(*elem)),
         Type::Array(_) | Type::Tuple(_) => TypeTranslation::Wrapped(mode.wrap(ty)),
+        Type::Path(_) if allow_owned => TypeTranslation::Wrapped(mode.wrap(ty)),
         _ => unimplemented!("Type is unsupported, consider using a reference instead."),
     }
 }
@@ -77,13 +78,28 @@ fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInp
     })
     .for_each(|(name, ty)| {
         if let TypeTranslation::Wrapped(new) =
-            translate_type(ty.as_ref().clone(), WrapMode::Managed)
+            translate_type(ty.as_ref().clone(), WrapMode::Managed, false)
         {
             out.prelude
-                .push(parse_quote!(let #name: #ty = &#name.read(&__view).unwrap();));
+                .push(parse_quote!(let #name: #ty = &#name.read(&__view).unwrap().0;));
             *ty.as_mut() = new;
         }
     });
+
+    out
+}
+
+fn translate_host_output(ret: &mut ReturnType) -> Stmt {
+    let mut out = parse_quote!(return out;);
+
+    if let ReturnType::Type(_, ty) = ret {
+        if let TypeTranslation::Wrapped(new) =
+            translate_type(ty.as_ref().clone(), WrapMode::Managed, true)
+        {
+            *ty = Box::new(new);
+            out = parse_quote!(return scotch_host::EncodedPtr::new_in(&out, &mut __env, &*__instance).unwrap().to_managed(););
+        }
+    }
 
     out
 }
@@ -121,21 +137,22 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let args = &item_fn.sig.inputs;
 
-    let output = &item_fn.sig.output;
+    let original_output = item_fn.sig.output.clone();
     let block = &item_fn.block;
+
+    let epilogue = translate_host_output(&mut item_fn.sig.output);
+    let output = &item_fn.sig.output;
 
     let out = quote! {
         #vis fn #ident(mut __env: #env_type, #args) #output {
             let __instance = __env.data().instance.upgrade().unwrap();
             let __view = __instance.exports.get_memory("memory").expect("Memory is missing").view(&__env);
 
-            #[allow(non_snake_case)]
-            let STATE = &mut __env.data_mut().state;
+            let state = &mut __env.data_mut().state;
 
             #(#prelude)*
-            let __output = #block;
-
-            __output
+            let out = (move || #original_output #block)();
+            #epilogue
         }
     };
 
@@ -200,7 +217,7 @@ fn prepare_handle_gen_data(args: impl Iterator<Item = PatType>) -> HandleGenerat
         let ty = &arg.ty;
         out.callback_args.push(parse_quote!(#name: #ty));
 
-        match translate_type(arg.ty.as_ref().clone(), WrapMode::Encoded) {
+        match translate_type(arg.ty.as_ref().clone(), WrapMode::Encoded, false) {
             TypeTranslation::Wrapped(new) => {
                 let pre = parse_quote! {
                     let #name: #new = scotch_host::EncodedPtr::new_in(#name, &mut *store.write(), &*instance).expect("Alloc failed");
@@ -221,14 +238,34 @@ fn prepare_handle_gen_data(args: impl Iterator<Item = PatType>) -> HandleGenerat
 }
 
 fn handle_from_function(mut func: ForeignItemFn) -> TokenStream2 {
+    let mut ending: Stmt = parse_quote!(return out;);
     let (callback_return_type, dispatch_return_type): (Type, Type) =
         if let ReturnType::Type(_, ref mut ty) = func.sig.output {
-            let Type::Path(ty) = ty.as_mut() else { panic!("Bad return type"); };
+            let out_ty = if let TypeTranslation::Wrapped(new) =
+                translate_type(ty.as_ref().clone(), WrapMode::Managed, true)
+            {
+                ending = parse_quote! {
+                    return out.map(|ptr| {
+                        let out = ptr.read(
+                            &instance.exports
+                                .get_memory("memory")
+                                .expect("Memory is missing")
+                                .view(&*store.read())
+                        ).map_err(|e| scotch_host::RuntimeError::new(e.to_string()));
+                        if let Ok((_, len)) = out {
+                            // TODO: Should be handled somehow?
+                            _ = ptr.free_in(len, &mut *store.write(), &*instance);
+                        }
 
-            (
-                parse_quote!(Result<#ty, scotch_host::RuntimeError>),
-                ty.clone().into(),
-            )
+                        out.map(|(val, _)| val)
+                    }).and_then(|x| x);
+                };
+                new
+            } else {
+                ty.as_ref().clone()
+            };
+
+            (parse_quote!(Result<#ty, scotch_host::RuntimeError>), out_ty)
         } else {
             (
                 parse_quote!(Result<(), scotch_host::RuntimeError>),
@@ -326,7 +363,7 @@ fn handle_from_function(mut func: ForeignItemFn) -> TokenStream2 {
                     let out = typed_fn.call(&mut *store.write(), #(#arg_names),*);
                     #(#post_dispatch)*
 
-                    out
+                    #ending
                 }) as <Self as scotch_host::GuestFunctionHandle>::Callback;
 
                 let any = Box::new(callback) as Box<dyn core::any::Any>;

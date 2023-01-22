@@ -1,4 +1,4 @@
-use crate::{PrefixType, ScotchHostError};
+use crate::{ManagedPtr, PrefixType, ScotchHostError};
 use bincode::{config::standard, Decode, Encode};
 use std::{borrow::Cow, marker::PhantomData, mem::size_of};
 use wasmer::{
@@ -8,12 +8,16 @@ use wasmer::{
 
 #[doc(hidden)]
 pub struct EncodedPtr<T: Encode + Decode, M: MemorySize = Memory32> {
-    pub(crate) offset: M::Offset,
+    offset: M::Offset,
     size: usize,
     _ty: PhantomData<T>,
 }
 
 impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
+    pub fn to_managed(&self) -> ManagedPtr<T, M> {
+        ManagedPtr::new(self.offset)
+    }
+
     pub fn new_in(
         value: &T,
         store: &mut impl AsStoreMut,
@@ -71,7 +75,7 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
 
     pub fn free_in(
         self,
-        mut store: &mut impl AsStoreMut,
+        store: &mut impl AsStoreMut,
         instance: &Instance,
     ) -> Result<(), ScotchHostError> {
         let offset: u64 = self.offset.into();
@@ -81,7 +85,7 @@ impl<T: Encode + Decode, M: MemorySize> EncodedPtr<T, M> {
             .get_function("__scotch_free")
             .map_err(ScotchHostError::FreeMissing)?;
         func.call(
-            &mut store,
+            store,
             &[
                 (offset as i32).into(),
                 ((self.size + size_of::<PrefixType>()) as i32).into(),
@@ -114,8 +118,12 @@ where
     type Native = M::Native;
 
     #[inline]
-    fn from_native(_: Self::Native) -> Self {
-        unimplemented!("Returning EncodedPtr from guest functions is not allowed")
+    fn from_native(native: Self::Native) -> Self {
+        Self {
+            offset: M::native_to_offset(native),
+            size: 1,
+            _ty: PhantomData,
+        }
     }
 
     #[inline]

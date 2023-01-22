@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
     parse_macro_input, parse_quote, Expr, FnArg, ForeignItem, ItemFn, ItemForeignMod, Pat,
-    Signature, Stmt, Type, TypeReference,
+    ReturnType, Signature, Stmt, Type, TypeReference,
 };
 
 fn is_atom_type(ty: &str) -> bool {
@@ -33,7 +33,7 @@ enum TypeTranslation {
     Wrapped(Type),
 }
 
-fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
+fn translate_type(ty: Type, mode: WrapMode, allow_owned: bool) -> TypeTranslation {
     match ty {
         Type::Path(ref path)
             if is_atom_type(&path.path.segments.last().unwrap().ident.to_string()) =>
@@ -47,6 +47,7 @@ fn translate_type(ty: Type, mode: WrapMode) -> TypeTranslation {
             ..
         }) => TypeTranslation::Wrapped(mode.wrap(*elem)),
         Type::Array(_) | Type::Tuple(_) => TypeTranslation::Wrapped(mode.wrap(ty)),
+        Type::Path(_) if allow_owned => TypeTranslation::Wrapped(mode.wrap(ty)),
         _ => unimplemented!("Type is unsupported, consider using a reference instead."),
     }
 }
@@ -77,7 +78,7 @@ fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInp
     })
     .for_each(|(name, ty)| {
         if let TypeTranslation::Wrapped(new) =
-            translate_type(ty.as_ref().clone(), WrapMode::Managed)
+            translate_type(ty.as_ref().clone(), WrapMode::Managed, false)
         {
             *ty = Box::new(new);
             out.prelude
@@ -88,6 +89,26 @@ fn translate_host_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> HostInp
             out.call_args.push(parse_quote!(#name));
         }
     });
+
+    out
+}
+
+fn translate_host_output(ret: &mut ReturnType) -> Stmt {
+    let mut out = parse_quote!(return out;);
+
+    if let ReturnType::Type(_, ty) = ret {
+        if let TypeTranslation::Wrapped(new) =
+            translate_type(ty.as_ref().clone(), WrapMode::Managed, true)
+        {
+            *ty = Box::new(new);
+            out = parse_quote! {return {
+                let ptr = scotch_guest::ManagedPtr::with_size_by_address(out);
+                let value = ptr.read().expect("Guest received invalid ptr");
+                ptr.free();
+                value
+            };};
+        }
+    }
 
     out
 }
@@ -122,6 +143,8 @@ pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
             } = func.sig.clone();
 
             let sig = &mut func.sig;
+            let ending = translate_host_output(&mut sig.output);
+
             let fake_id = format_ident!("_host_{}", sig.ident);
             sig.ident = fake_id.clone();
 
@@ -140,10 +163,10 @@ pub fn host_functions(_: TokenStream, input: TokenStream) -> TokenStream {
 
                     unsafe {
                         #(#prelude)*
-                        let __out = #fake_id(#(#call_args),*);
+                        let out = #fake_id(#(#call_args),*);
                         #(#epilogue)*
 
-                        __out
+                        #ending
                     }
                 }
             }
@@ -169,12 +192,27 @@ fn translate_guest_inputs<'a>(it: impl Iterator<Item = &'a mut FnArg>) -> GuestI
         (id.ident.clone(), &mut arg.ty)
     })
     .for_each(|(name, ty)| {
-        if let TypeTranslation::Wrapped(new) = translate_type(ty.as_ref().clone(), WrapMode::Encoded) {
+        if let TypeTranslation::Wrapped(new) = translate_type(ty.as_ref().clone(), WrapMode::Encoded, false) {
             out.prelude
                 .push(parse_quote!(let #name: #ty = &unsafe { #name.read().expect("Guest was given invalid pointer") };));
             *ty = Box::new(new);
         };
     });
+
+    out
+}
+
+fn translate_guest_output(ret: &mut ReturnType) -> Stmt {
+    let mut out = parse_quote!(return out;);
+
+    if let ReturnType::Type(_, ty) = ret {
+        if let TypeTranslation::Wrapped(new) =
+            translate_type(ty.as_ref().clone(), WrapMode::Managed, true)
+        {
+            *ty = Box::new(new);
+            out = parse_quote!(return scotch_guest::ManagedPtr::new(&out).unwrap().offset(););
+        }
+    }
 
     out
 }
@@ -193,12 +231,14 @@ pub fn guest_function(_: TokenStream, input: TokenStream) -> TokenStream {
     item_fn.sig.abi = Some(parse_quote!(extern "C"));
 
     let GuestInputTranslation { prelude } = translate_guest_inputs(item_fn.sig.inputs.iter_mut());
+    let output = item_fn.sig.output.clone();
+    let epilogue = translate_guest_output(&mut item_fn.sig.output);
     let body = item_fn.block;
 
     item_fn.block = parse_quote!({
         #(#prelude)*
-        let __out = #body;
-        __out
+        let out = (move || #output #body)();
+        #epilogue
     });
 
     let out = quote! {

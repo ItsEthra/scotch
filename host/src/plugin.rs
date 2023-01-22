@@ -257,6 +257,12 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
             .expect("You need to call `from_binary` or `from_serialized` first");
         let instance: InstanceRef =
             Instance::new(&mut self.store, &module, &self.imports.unwrap_or_default())?.into();
+        instance
+            .exports
+            .get_memory("memory")
+            .unwrap()
+            .grow(&mut self.store, 3)
+            .unwrap();
 
         if let Some(env) = self.func_env.as_mut() {
             env.as_mut(&mut self.store).instance = Arc::downgrade(&instance);
