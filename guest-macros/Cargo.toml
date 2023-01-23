@@ -1,5 +1,6 @@
 [package]
 name = "scotch-guest-macros"
+description = "Scotch guest macros"
 edition = "2021"
 version.workspace = true
 license = "MIT"

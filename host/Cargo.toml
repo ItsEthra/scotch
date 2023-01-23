@@ -1,6 +1,7 @@
 [package]
 name = "scotch-host"
 edition = "2021"
+description = "Scotch host api for creating WASM plugins"
 version.workspace = true
 license = "MIT"
 authors = ["ItsEthra"]
