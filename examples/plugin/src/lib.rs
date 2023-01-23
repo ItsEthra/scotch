@@ -1,4 +1,4 @@
-scotch_guest::include_alloc!();
+scotch_guest::export_alloc!();
 
 #[cfg(not(bench))]
 #[scotch_guest::host_functions]

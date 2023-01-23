@@ -21,7 +21,7 @@ pub use scotch_guest_macros::*;
 /// Includes allocation utils for the host. Plugin will not work without it.
 /// You need to put it somewhere in your plugin crate.
 #[macro_export]
-macro_rules! include_alloc {
+macro_rules! export_alloc {
     () => {
         #[no_mangle]
         extern "C" fn __scotch_alloc(size: u32, align: u32) -> u32 {
