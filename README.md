@@ -35,7 +35,7 @@ let plugin = WasmPlugin::builder()
     .finish()?;
 
 // Call the function
-let sum = plugin.function_unwrap::<add_up_list_renamed>()(&vec![1, 2, 3, 4, 5])?;
+let sum = plugin.function_unwrap::<add_up_list>()(&vec![1, 2, 3, 4, 5])?;
 assert_eq!(sum, 15);
 ```
 
@@ -53,3 +53,8 @@ fn add_up_list(items: &Vec<i32>) -> i32 {
 ```
 
 More complete example can be found [here](/examples)
+
+## Planned features
+* [ ] Improve codegeneration with proc macros.
+* [ ] Mutable references.
+* [ ] WASI support.
