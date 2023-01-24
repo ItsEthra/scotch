@@ -281,7 +281,7 @@ fn handle_from_function(mut func: ForeignItemFn) -> TokenStream2 {
         .iter()
         .find(|attr| {
             attr.path.segments.len() == 1
-                && attr.path.segments.first().unwrap().ident.to_string() == "link_name"
+                && attr.path.segments.first().unwrap().ident == "link_name"
         })
         .and_then(|attr| {
             let tokens = <TokenStream as From<_>>::from(quote!(#attr))
