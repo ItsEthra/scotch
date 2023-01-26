@@ -97,7 +97,7 @@ impl WasmPlugin {
 
     /// Serializes plugin and compresses bytes to use with headless mode.
     #[cfg(feature = "flate2")]
-    #[doc(cfg(feature = "flate2"))]
+    #[cfg_attr(feature = "unstable-doc-cfg", doc(cfg(feature = "flate2")))]
     pub fn serialize_compress(&self) -> Result<Vec<u8>, SerializeError> {
         use flate2::Compression;
         use std::io::Write;
@@ -111,7 +111,7 @@ impl WasmPlugin {
 
     /// Serializes plugin to file and compresses bytes to use with headless mode.
     #[cfg(feature = "flate2")]
-    #[doc(cfg(feature = "flate2"))]
+    #[cfg_attr(feature = "unstable-doc-cfg", doc(cfg(feature = "flate2")))]
     pub fn serialize_to_file_compress(&self, path: impl AsRef<Path>) -> Result<(), SerializeError> {
         let compressed = self.serialize_compress()?;
         Ok(std::fs::write(path, compressed)?)
@@ -151,7 +151,7 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
     /// Compiles bytecode with selected compiler. To change the compile use feature flags.
     /// Default compiler is `cranelift`.
     #[cfg(feature = "compiler")]
-    #[doc(cfg(feature = "compiler"))]
+    #[cfg_attr(feature = "unstable-doc-cfg", doc(cfg(feature = "compiler")))]
     pub fn from_binary(mut self, bytecode: &[u8]) -> Result<Self, CompileError> {
         self.module = Some(Module::from_binary(&self.store, bytecode)?);
         Ok(self)
@@ -169,7 +169,7 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
     /// # Safety
     /// See [`Module::deserialize`].
     #[cfg(feature = "flate2")]
-    #[doc(cfg(feature = "flate2"))]
+    #[cfg_attr(feature = "unstable-doc-cfg", doc(cfg(feature = "flate2")))]
     pub unsafe fn from_serialized_compressed(
         mut self,
         compressed: &[u8],
@@ -199,7 +199,7 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
     /// # Safety
     /// See [`Module::deserialize`].
     #[cfg(feature = "flate2")]
-    #[doc(cfg(feature = "flate2"))]
+    #[cfg_attr(feature = "unstable-doc-cfg", doc(cfg(feature = "flate2")))]
     pub unsafe fn from_serialized_file_compressed(
         mut self,
         path: impl AsRef<Path>,

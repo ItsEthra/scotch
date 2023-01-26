@@ -18,3 +18,9 @@ expand-runner:
 
 expand-plugin:
 	cargo expand --package plugin
+
+doc-host:
+	cargo doc --package scotch-host --features unstable-doc-cfg,flate2 --open
+
+doc-guest:
+	cargo doc --package scotch-guest --open

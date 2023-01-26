@@ -8,7 +8,7 @@ authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["unstable-doc-cfg", "flate2"]
 
 [[bench]]
 name = "call"
