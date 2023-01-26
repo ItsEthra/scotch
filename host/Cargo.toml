@@ -25,7 +25,7 @@ compiler = []
 unstable-doc-cfg = []
 
 [dependencies]
-scotch-host-macros = { path = "../host-macros" }
+scotch-host-macros = "0.1"
 flate2 = { version = "1.0", optional = true }
 parking_lot = "0.12"
 
