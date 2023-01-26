@@ -1152,12 +1152,22 @@ name = "scotch-guest"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "scotch-guest-macros",
+ "scotch-guest-macros 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "scotch-guest-macros"
 version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "scotch-guest-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8fdb45e7679ef177f0c58896b2a6afb1cf04197a83bf5ec3cdce4eff50a1521"
 dependencies = [
  "quote",
  "syn",
@@ -1171,13 +1181,23 @@ dependencies = [
  "criterion",
  "flate2",
  "parking_lot 0.12.1",
- "scotch-host-macros",
+ "scotch-host-macros 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmer",
 ]
 
 [[package]]
 name = "scotch-host-macros"
 version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "scotch-host-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06266db02d2bbec7950997a7f0c8b4056ae6680894d36c8a32200c47dd55ffe0"
 dependencies = [
  "quote",
  "syn",
