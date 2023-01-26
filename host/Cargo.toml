@@ -1,11 +1,14 @@
 [package]
 name = "scotch-host"
 edition = "2021"
-description = "Scotch host api for creating WASM plugins"
+description = "Scotch host api for creating WASM plugins."
 version.workspace = true
 license = "MIT"
 authors = ["ItsEthra"]
 repository = "https://github.com/ItsEthra/scotch"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [[bench]]
 name = "call"
@@ -19,6 +22,7 @@ cranelift = ["wasmer/cranelift"]
 llvm = ["wasmer/llvm"]
 
 compiler = []
+unstable-doc-cfg = []
 
 [dependencies]
 scotch-host-macros = { path = "../host-macros" }

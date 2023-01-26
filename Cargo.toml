@@ -6,6 +6,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 wasmer = { version = "3", default-features = false, features = ["sys", "compiler"] }
+syn = { version = "1", features = ["full"] }
 bincode = "2.0.0-rc.2"
 
 [profile.release]

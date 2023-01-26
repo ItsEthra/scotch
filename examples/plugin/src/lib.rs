@@ -1,3 +1,5 @@
+use common::Object;
+
 scotch_guest::export_alloc!();
 
 #[cfg(not(bench))]
@@ -18,6 +20,11 @@ fn add_up_list(items: &Vec<i32>) -> i32 {
         .for_each(|text| print(&text));
 
     items.iter().sum::<i32>()
+}
+
+#[scotch_guest::guest_function]
+fn sum_object(obj: &Object) -> f32 {
+    obj.first + obj.second as f32
 }
 
 #[scotch_guest::guest_function]

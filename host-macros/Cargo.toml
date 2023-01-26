@@ -11,5 +11,5 @@ repository = "https://github.com/ItsEthra/scotch"
 proc-macro = true
 
 [dependencies]
-syn = { version = "1", features = ["extra-traits", "full"] }
+syn.workspace = true
 quote = "1"

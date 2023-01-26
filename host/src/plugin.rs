@@ -97,6 +97,7 @@ impl WasmPlugin {
 
     /// Serializes plugin and compresses bytes to use with headless mode.
     #[cfg(feature = "flate2")]
+    #[doc(cfg(feature = "flate2"))]
     pub fn serialize_compress(&self) -> Result<Vec<u8>, SerializeError> {
         use flate2::Compression;
         use std::io::Write;
@@ -108,14 +109,16 @@ impl WasmPlugin {
         Ok(encoder.finish()?)
     }
 
+    /// Serializes plugin to file and compresses bytes to use with headless mode.
     #[cfg(feature = "flate2")]
+    #[doc(cfg(feature = "flate2"))]
     pub fn serialize_to_file_compress(&self, path: impl AsRef<Path>) -> Result<(), SerializeError> {
         let compressed = self.serialize_compress()?;
         Ok(std::fs::write(path, compressed)?)
     }
 }
 
-/// Builder for creating [`WasmPlugin`]
+/// Builder for creating [`WasmPlugin`].
 pub struct WasmPluginBuilder<E: Any + Send + Sized + 'static> {
     store: Store,
     module: Option<Module>,
@@ -125,7 +128,7 @@ pub struct WasmPluginBuilder<E: Any + Send + Sized + 'static> {
 }
 
 impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
-    /// Creates new [`WasmPluginBuilder`]
+    /// Creates new [`WasmPluginBuilder`].
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -148,21 +151,25 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
     /// Compiles bytecode with selected compiler. To change the compile use feature flags.
     /// Default compiler is `cranelift`.
     #[cfg(feature = "compiler")]
+    #[doc(cfg(feature = "compiler"))]
     pub fn from_binary(mut self, bytecode: &[u8]) -> Result<Self, CompileError> {
         self.module = Some(Module::from_binary(&self.store, bytecode)?);
         Ok(self)
     }
 
+    /// Creates plugin from bytes created by [`WasmPlugin::serialize`].
     /// # Safety
-    /// See [`Module::deserialize`]
+    /// See [`Module::deserialize`].
     pub unsafe fn from_serialized(mut self, data: &[u8]) -> Result<Self, DeserializeError> {
         self.module = Some(Module::deserialize(&self.store, data)?);
         Ok(self)
     }
 
+    /// Creates plugin from compressed bytes created by [`WasmPlugin::serialize_compress`].
     /// # Safety
-    /// See [`Module::deserialize`]
+    /// See [`Module::deserialize`].
     #[cfg(feature = "flate2")]
+    #[doc(cfg(feature = "flate2"))]
     pub unsafe fn from_serialized_compressed(
         mut self,
         compressed: &[u8],
@@ -177,8 +184,9 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
         Ok(self)
     }
 
+    /// Creates plugin from bytes created by [`WasmPlugin::serialize_to_file`].
     /// # Safety
-    /// See [`Module::deserialize_from_file`]
+    /// See [`Module::deserialize_from_file`].
     pub unsafe fn from_serialized_file(
         mut self,
         path: impl AsRef<Path>,
@@ -187,9 +195,11 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
         Ok(self)
     }
 
+    /// Creates plugin from compressed bytes created by [`WasmPlugin::serialize_to_file_compress`].
     /// # Safety
-    /// See [`Module::deserialize`]
+    /// See [`Module::deserialize`].
     #[cfg(feature = "flate2")]
+    #[doc(cfg(feature = "flate2"))]
     pub unsafe fn from_serialized_file_compressed(
         mut self,
         path: impl AsRef<Path>,
@@ -208,7 +218,7 @@ impl<S: Any + Send + Sized + 'static> WasmPluginBuilder<S> {
     /// Creates a state that host function will have mutable access to.
     /// You *HAVE* to create the state. If you do not need it simply pass `()`.
     pub fn with_state(mut self, state: S) -> Self {
-        // This should help avoid questionable bugs in `with_imports`.
+        // This should help avoid questionable bugs in `with_imports`
         assert!(
             self.func_env.is_none(),
             "You can call `with_state` only once"

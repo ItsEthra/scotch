@@ -1,3 +1,4 @@
+#![cfg_attr(feature = "unstable-doc-cfg", feature(doc_cfg))]
 pub(crate) type PrefixType = u16;
 
 mod encoded;

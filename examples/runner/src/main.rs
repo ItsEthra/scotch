@@ -1,3 +1,4 @@
+use common::Object;
 use eyre::Result;
 use scotch_host::{guest_functions, host_function, make_exports, make_imports, WasmPlugin};
 
@@ -10,6 +11,7 @@ extern "C" {
     pub fn add_up_list(nums: &Vec<i32>) -> i32;
 
     pub fn greet(name: &String) -> String;
+    pub fn sum_object(obj: &Object) -> f32;
 }
 
 // `i32` is the state type. You can skip it if you are not using state.
@@ -48,10 +50,10 @@ fn main() -> Result<()> {
         .with_imports(make_imports![print, random_cat_fact])
         // This will cache `add_up_list` in plugin exports.
         // Not necessery but preferred.
-        .with_exports(make_exports![add_up_list_renamed, greet])
+        .with_exports(make_exports![add_up_list_renamed, greet, sum_object])
         .finish()?;
 
-    // If we had't call `.with_exports(make_exports!(add_up_list))` this would fail.
+    // If we had't call `.with_exports(make_exports![add_up_list])` this would fail.
     let sum = plugin.function_unwrap::<add_up_list_renamed>()(&vec![1, 2, 3, 4, 5])?;
     // You can use this to cache and get functions you hadn't cached using `.with_exports`.
     // let sum = plugin.function_unwrap_or_cache::<add_up_list>()(&vec![1, 2, 3, 4, 5])?;
@@ -65,6 +67,13 @@ fn main() -> Result<()> {
         welcome,
         format!("Hello, Jack! Did you know that {fact1} and {fact2}")
     );
+
+    let result = plugin.function_unwrap::<sum_object>()(&Object {
+        first: 5.3,
+        second: 10,
+        text: "Some text".to_owned(),
+    })?;
+    assert_eq!(result, 15.3);
 
     Ok(())
 }

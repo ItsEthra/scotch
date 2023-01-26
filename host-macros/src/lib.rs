@@ -409,7 +409,7 @@ pub fn guest_functions(_: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// let plugin = WasmPluginBuilder::new()
 ///     .with_state(())
-///     .with_imports(make_imports!(print)));
+///     .with_imports(make_imports![print]);
 /// ```
 #[proc_macro]
 pub fn make_imports(input: TokenStream) -> TokenStream {
@@ -445,7 +445,7 @@ pub fn make_imports(input: TokenStream) -> TokenStream {
 ///
 /// let plugin = WasmPluginBuilder::new()
 ///     .with_state(())
-///     .with_exports(make_exports!(add_up_list));
+///     .with_exports(make_exports![add_up_list]);
 /// ```
 #[proc_macro]
 pub fn make_exports(input: TokenStream) -> TokenStream {

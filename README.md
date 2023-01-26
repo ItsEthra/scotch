@@ -5,6 +5,13 @@ It achieves that by encoding and decoding complex types when passed between host
 Encoding and decoding is handled by `bincode@2.0.0-rc.2` so you need your types
 to implement `bincode::Encode` and `bincode::Decode` traits.
 
+## Headless mode
+You can disable default features to enable headless mode. This should reduce host binary size.
+In headless mode you are unable to compile wasm bytecode and need to rely on serialized plugins.
+See `WasmPluginBuilder::from_serialized`, `WasmPluginBuilder::from_serialized_compressed`, 
+`WasmPlugin::serialize`, `WasmPlugin::serialize_compress`. `*_compress`, `*_compressed` functions
+uses `flate2` crate to compress/decompress plugins, to use them you need to have `flate2` feature enabled.
+
 ## Instalation
 ```toml
 # In your main application
@@ -21,6 +28,7 @@ scotch-guest = "0.1"
 // Define functions that your plugin exports.
 #[scotch_host::guest_functions]
 extern "C" {
+    // To pass complex types you use references to them, not owned types.
     // The name must match with the name of the plugin function.
     pub fn add_up_list(nums: &Vec<i32>) -> i32;
 }
