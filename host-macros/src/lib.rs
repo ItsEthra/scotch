@@ -159,7 +159,6 @@ pub fn host_function(args: TokenStream, input: TokenStream) -> TokenStream {
     out.into()
 }
 
-#[derive(Debug)]
 #[allow(dead_code)]
 struct GuestFunction {
     vis: Visibility,
@@ -195,7 +194,7 @@ impl Parse for GuestFunction {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct HandleGenerationData {
     callback_types: Vec<Type>,
     callback_args: Vec<BareFnArg>,
